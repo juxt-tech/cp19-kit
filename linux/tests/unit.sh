@@ -11,6 +11,10 @@ eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$3] got [$2]
 yes_() { if "${@:2}"; then ok "$1"; else bad "$1"; fi; }
 no_()  { if "${@:2}"; then bad "$1"; else ok "$1"; fi; }
 
+echo "== line endings (CRLF breaks bash on Linux)"
+crlf="$(grep -rlI $'\r' "$KIT" --include='*.sh' 2>/dev/null)"
+if [ -z "$crlf" ]; then PASS=$((PASS+1)); echo "  ok   no CRLF in any .sh"; else FAIL=$((FAIL+1)); echo "  FAIL CRLF in: $crlf"; fi
+
 # shellcheck source=../lib/common.sh
 source "$KIT/lib/common.sh"
 for m in "$KIT"/modules/*.sh; do [ -f "$m" ] && source "$m"; done

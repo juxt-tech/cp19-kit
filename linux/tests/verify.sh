@@ -17,6 +17,8 @@ t "sshd config still valid"               sshd -t
 t "syncookies persisted"                  grep -qx "net.ipv4.tcp_syncookies=1" /etc/sysctl.d/99-cpkit.conf
 t "PASS_MAX_DAYS 90"                      grep -qE "^PASS_MAX_DAYS[[:space:]]+90$" /etc/login.defs
 t "pam_faillock enabled"                  grep -q pam_faillock.so /etc/pam.d/common-auth
+t "pwquality installed despite broken sources" sh -c "dpkg -s libpam-pwquality | grep -q 'ok installed'"
+t "pwquality minlen set"                  grep -qE "^minlen = 10" /etc/security/pwquality.conf
 f "john purged"                           sh -c "dpkg -s john 2>/dev/null | grep -q 'ok installed'"
 t "ufw active"                            sh -c "ufw status | grep -q 'Status: active'"
 t "ufw allows ftp (critical)"             sh -c "ufw status | grep -qE '^21/tcp'"

@@ -13,9 +13,10 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$KIT/lib/common.sh"
 for m in "$KIT"/modules/*.sh; do source "$m"; done
 
-ORDER=(users passwords firewall ssh sysctl perms services software updates persistence media)
+ORDER=(users sources passwords firewall ssh sysctl perms services software updates persistence media)
 declare -A WHAT=(
     [users]="accounts + sudo match the README; lock root; guest login off"
+    [sources]="re-enable official apt sources + apt-get update (needed before installs)"
     [passwords]="password age/length/complexity/history; lockout after 5 fails"
     [firewall]="ufw on: deny in, allow out, open critical-service ports"
     [ssh]="harden sshd_config (only if ssh is critical)"

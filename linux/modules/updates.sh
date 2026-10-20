@@ -28,16 +28,32 @@ EOF
 }
 _upd_run() { DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade; }
 
-mod_updates() {
-    cp_header "UPDATES"
-    local f
+_upd_refresh() { DEBIAN_FRONTEND=noninteractive apt-get update; }
+
+# Quick step that runs BEFORE any module installs packages (pwquality, ufw):
+# re-enable official apt sources, then refresh the package lists.
+mod_sources() {
+    [ "${mod_sources_quiet:-0}" = 1 ] || cp_header "APT SOURCES  (so later modules can install packages)"
+    local f fixed=0
     for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
         [ -f "$f" ] || continue
         if upd_source_needs_fix "$f"; then
             cp_backup "$f"
-            cp_act updates "re-enable official sources in $f" "disabled sources = no security updates" upd_fix_source "$f"
+            cp_act sources "re-enable official sources in $f" "disabled sources = no installs, no security updates" upd_fix_source "$f"
+            fixed=1
         fi
     done
+    if [ "$fixed" = 1 ]; then
+        cp_act sources "apt-get update" "load package lists from the re-enabled sources" _upd_refresh
+    else
+        echo "  ok   official apt sources enabled"
+    fi
+    return 0
+}
+
+mod_updates() {
+    cp_header "UPDATES"
+    mod_sources_quiet=1 mod_sources
     grep -rhsE '^[^#]*deb ' /etc/apt/sources.list.d/ /etc/apt/sources.list 2>/dev/null | \
         grep -Ev 'debian\.org|ubuntu\.com|linuxmint\.com|canonical\.com|mirror' | while read -r l; do
         cp_finding updates "unusual apt source: $l"

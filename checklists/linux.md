@@ -35,6 +35,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 | # | Module | What it does | Category |
 |---|---|---|---|
 | 1 | users | delete non-README users (home dirs kept); create missing; sudo group = README admins; delete extra UID-0 accounts; passwords for empty-password users; lock root; guest login off | User Auditing |
+| 1b | sources | re-enables official apt sources (Debian `.sources`, Mint/Ubuntu `.list`) + `apt-get update`; unknown repos stay off | OS Updates |
 | ⚠ | before `passwords` | open a **second terminal and run `sudo -i`** first. Lockout applies to sudo too: 5 wrong passwords locks YOU out for 30 min. Unlock from the root shell: `faillock --user <name> --reset` | — |
 | 2 | passwords | `login.defs` max 90 / min 10 / warn 7 (+ `chage` existing users); pwquality minlen 10 + every char class; `remember=5`; remove `nullok`; faillock 5 tries / 30 min (via pam-auth-update, self-checking) | Account Policies |
 | 3 | firewall | ufw on, deny in, allow out, open ports for critical services, logging | Defensive Countermeasures |
