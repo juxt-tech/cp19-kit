@@ -1,0 +1,49 @@
+! ===== 05 SSH, PORT SECURITY, DHCP, NAT, ACL basics =====
+configure terminal
+! --- SSH (needs hostname + domain first) ---
+ hostname <R1>
+ ip domain-name <cisco.com>
+ crypto key generate rsa                ! answer 1024 (or 2048) when asked for bits
+ username <admin> secret <Cyb3rPatriot>
+ ip ssh version 2
+ line vty 0 4
+  transport input ssh                   ! Telnet off
+  login local                           ! use the username database
+  exit
+! if SSH misbehaves: crypto key zeroize rsa  then generate again
+!
+! --- Port security (2960 access port) ---
+ interface fa0/<5>
+  switchport mode access                ! port security needs an access port
+  switchport port-security
+  switchport port-security maximum <2>
+  switchport port-security mac-address sticky
+  switchport port-security violation <shutdown|restrict|protect>
+  exit
+!
+! --- DHCP server on a router ---
+ ip dhcp excluded-address <10.0.10.1> <10.0.10.10>
+ ip dhcp pool <LAN10>
+  network <10.0.10.0> <255.255.255.0>
+  default-router <10.0.10.1>
+  dns-server <8.8.8.8>
+  exit
+! DHCP relay on the gateway interface of another LAN:  ip helper-address <DHCP_SERVER_IP>
+!
+! --- NAT overload (PAT) ---
+ access-list 1 permit <10.0.0.0> <0.255.255.255>
+ interface <inside g0/1>
+  ip nat inside
+ interface <outside g0/0>
+  ip nat outside
+  exit
+ ip nat inside source list 1 interface <g0/0> overload
+!
+! --- Standard ACL example: only the admin PC may SSH in ---
+ access-list 10 permit host <ADMIN_PC_IP>
+ line vty 0 4
+  access-class 10 in
+  exit
+end
+write memory
+! VERIFY: show ip ssh ; show port-security interface fa0/5 ; show ip dhcp binding ; show ip nat translations

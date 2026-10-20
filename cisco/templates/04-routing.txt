@@ -1,0 +1,33 @@
+! ===== 04 ROUTING: static, default, EIGRP, OSPF =====
+configure terminal
+! --- Static route: "to reach NETWORK/MASK, send to NEXT-HOP" ---
+ ip route <192.168.2.0> <255.255.255.0> <NEXT_HOP_IP>
+! --- Default route (gateway of last resort): everything unknown goes here ---
+ ip route 0.0.0.0 0.0.0.0 <NEXT_HOP_IP>
+!
+! --- EIGRP (used in the CP19 practice round) ---
+ router eigrp <AS_NUMBER>               ! the AS must match the neighbors (e.g. 1)
+  network <64.103.100.0> <0.0.0.255>    ! one line per connected network, WILDCARD mask
+  network <100.103.100.0> <0.0.0.255>
+  no auto-summary
+  passive-interface <g0/1>              ! only if asked: LAN-facing ports don't send hellos
+  exit
+!
+! --- OSPF single area ---
+ router ospf <1>
+  router-id <1.1.1.1>                   ! set it before neighbors form, or: clear ip ospf process
+  network <10.0.10.0> <0.0.0.255> area 0
+  network <10.1.1.0> <0.0.0.3> area 0
+  passive-interface <g0/1>
+  default-information originate         ! only on the router with the internet default route
+  exit
+! per-interface alternative:
+ interface g0/0
+  ip ospf 1 area 0
+  ip ospf priority 255                  ! wins the DR election (0 = never DR)
+  ip ospf cost 10
+  exit
+end
+write memory
+! VERIFY: show ip route  (S / D / O lines)
+!         show ip eigrp neighbors  |  show ip ospf neighbor  |  show ip protocols

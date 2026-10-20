@@ -1,0 +1,29 @@
+! ===== 02 INTERFACE IPs + HOSTS =====
+! --- Router interface ---
+configure terminal
+ interface <g0/0 or fa0/0>
+  description <TO WHAT>
+  ip address <IP> <MASK>                 ! e.g. 64.103.100.101 255.255.255.0
+  no shutdown                            ! interfaces start OFF on routers
+  exit
+!
+! --- Layer 2 switch management IP (2960) ---
+ interface vlan 1
+  ip address <IP> <MASK>
+  no shutdown
+  exit
+ ip default-gateway <ROUTER_IP_ON_THAT_LAN>
+!
+! --- Shut unused switch ports (if asked) ---
+ interface range fa0/10 - 24
+  shutdown
+  exit
+end
+write memory
+! VERIFY: show ip interface brief   -> Status up, Protocol up
+!
+! --- PC / server (GUI, not CLI) ---
+!  Config tab > Settings > Display Name = <NAME FROM INSTRUCTIONS>
+!  Desktop > IP Configuration > Static: IP / Subnet Mask / Default Gateway / DNS Server
+!  Server: Services tab > HTTP / FTP / DNS -> On or Off as instructed (FTP user list is here too)
+!  Test: Desktop > Command Prompt: ping <gateway>, ping <remote>, ftp <ip> ; Desktop > Web Browser: http://<name>

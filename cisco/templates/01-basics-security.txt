@@ -1,0 +1,26 @@
+! ===== 01 BASICS + DEVICE SECURITY (router or switch) =====
+! Replace <CAPS> with values from the PT Activity instructions. "!" lines are comments - don't type them.
+enable
+configure terminal
+ hostname <HOSTNAME>                     ! exact spelling from the instructions
+ no ip domain-lookup                     ! typos no longer hang for 30 seconds
+ enable secret <ENABLE_SECRET>           ! hashed password for privileged (#) mode
+ service password-encryption             ! hides every plain-text password in show run
+ banner motd #Authorized access only!#   ! use the banner text from the instructions
+ security passwords min-length 10        ! only if asked
+ login block-for 120 attempts 3 within 60 ! only if asked (brute-force lockout)
+!
+line console 0
+ password <CONSOLE_PW>
+ login
+ logging synchronous                     ! log messages stop breaking your typing
+ exec-timeout 5 0
+ exit
+line vty 0 15                            ! routers may only have 0 4 - use what exists
+ password <VTY_PW>
+ login                                   ! (use "login local" if SSH/usernames are required - see 05)
+ exec-timeout 5 0
+ exit
+end
+write memory
+! VERIFY: show running-config | include hostname|secret|banner

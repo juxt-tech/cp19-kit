@@ -1,0 +1,54 @@
+! ===== 03 VLANs, ACCESS PORTS, TRUNKS, INTER-VLAN ROUTING =====
+configure terminal
+ vlan <10>
+  name <STUDENTS>
+  exit
+ vlan <20>
+  name <STAFF>
+  exit
+!
+! --- Access port (one VLAN, for a PC) ---
+ interface fa0/<2>
+  switchport mode access
+  switchport access vlan <10>
+  spanning-tree portfast                ! only on ports to end devices
+  spanning-tree bpduguard enable        ! only if asked
+  exit
+!
+! --- Trunk (switch-to-switch / switch-to-router) ---
+ interface g0/1
+  switchport trunk encapsulation dot1q  ! ONLY on 3560/3650 L3 switches; 2960 rejects it (that's fine)
+  switchport mode trunk
+  switchport trunk allowed vlan 1,10,20 ! ONE line, comma list. Three separate lines overwrite each other!
+  switchport trunk native vlan <99>     ! only if asked
+  exit
+end
+write memory
+!
+! ===== Inter-VLAN routing option A: Layer 3 switch (3560/3650) =====
+configure terminal
+ ip routing                             ! without this the L3 switch will NOT route
+ interface vlan 10
+  ip address <10.0.10.1> <255.255.255.0>
+  no shutdown
+ interface vlan 20
+  ip address <10.0.20.1> <255.255.255.0>
+  no shutdown
+ interface g1/0/1                       ! routed uplink port
+  no switchport
+  ip address <IP> <MASK>
+  no shutdown
+end
+!
+! ===== Option B: router-on-a-stick =====
+configure terminal
+ interface g0/0
+  no shutdown
+ interface g0/0.10
+  encapsulation dot1Q 10
+  ip address <10.0.10.1> <255.255.255.0>
+ interface g0/0.20
+  encapsulation dot1Q 20
+  ip address <10.0.20.1> <255.255.255.0>
+end
+! VERIFY: show vlan brief ; show interfaces trunk ; show ip route (C routes for each VLAN)
