@@ -34,14 +34,14 @@ _sysctl_write() {
 
 mod_sysctl() {
     cp_header "SYSCTL  (kernel + network)"
-    local kv k want cur bad=0
+    local kv k want cur bad=0 live=0
     for kv in "${CP_SYSCTL[@]}" "net.ipv4.ip_forward=0"; do
         k="${kv%%=*}"; want="${kv#*=}"
         cur="$(sysctl -n "$k" 2>/dev/null || echo '?')"
-        if [ "$cur" = "$want" ] && grep -qs "^$k=$want" "$CP_SYSCTL_FILE"; then continue; fi
-        echo "  -    $k = $cur (want $want)"; bad=1
+        grep -qsx "$k=$want" "$CP_SYSCTL_FILE" || { echo "  -    $k = $cur (want $want)"; bad=1; continue; }
+        [ "$cur" = "$want" ] || { cp_finding sysctl "$k is $cur live but $want in $CP_SYSCTL_FILE (reboot or run: sysctl --system)"; live=1; }
     done
-    if [ "$bad" = 0 ]; then echo "  ok   all kernel settings applied and persistent"; return 0; fi
+    if [ "$bad" = 0 ]; then echo "  ok   all kernel settings persistent in $CP_SYSCTL_FILE"; return 0; fi
     cp_finding sysctl "ip_forward is set to 0 - if the README says this box routes traffic, set it back to 1"
     # Some keys are read-only inside containers; the file still makes them persistent on a real VM.
     cp_act sysctl "write $CP_SYSCTL_FILE and run sysctl --system" "ASLR, SYN cookies, no redirects/source routing" _sysctl_write
