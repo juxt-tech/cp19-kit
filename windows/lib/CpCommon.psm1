@@ -115,7 +115,11 @@ function Invoke-CpAction {
     Write-Host "  [DO] $Description  -- $Why" -ForegroundColor Green
     if (-not (Confirm-Cp)) { Write-Host '       skipped'; Write-CpLog $Module 'SKIP' $Description '-' $Why; return }
     try {
-        & $ScriptBlock | Out-Null
+        # Non-terminating errors and native exit codes would otherwise look like success.
+        $global:LASTEXITCODE = 0
+        $errs = @(& $ScriptBlock 2>&1 | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+        if ($errs.Count -gt 0) { throw $errs[0].Exception }
+        if ($global:LASTEXITCODE -ne 0) { throw "command exited with code $global:LASTEXITCODE" }
         Write-CpLog $Module 'ACTION' $Description 'done' $Why
     } catch {
         Write-Host "       FAILED: $($_.Exception.Message)" -ForegroundColor Red

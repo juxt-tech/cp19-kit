@@ -31,6 +31,25 @@ Describe 'I8 Get-CpDefenderPolicyPlan' {
     It 'leaves unrelated values alone'     { $plan -contains 'SomethingHarmless' | Should Be $false }
 }
 
+Describe 'Backlog: quiet failures are logged as FAILED, not done' {
+    $run = Join-Path $env:TEMP ('cpkit-t-' + [guid]::NewGuid().ToString('N'))
+    Set-CpContext -RunDir $run -Apply -Yes
+    It 'a non-terminating error (Write-Error) is FAILED' {
+        Invoke-CpAction -Module t -Description 'soft' -Why 'w' -ScriptBlock { Write-Error 'quiet problem' } 6>&1 | Out-Null
+        (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match '\| t \| FAILED \| soft'
+    }
+    It 'a native command exit code != 0 is FAILED' {
+        Invoke-CpAction -Module t -Description 'native' -Why 'w' -ScriptBlock { & cmd.exe /c exit 3 } 6>&1 | Out-Null
+        (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match '\| t \| FAILED \| native'
+    }
+    It 'a clean action is still done' {
+        Invoke-CpAction -Module t -Description 'clean' -Why 'w' -ScriptBlock { & cmd.exe /c exit 0 } 6>&1 | Out-Null
+        (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match '\| t \| ACTION \| clean -> done'
+    }
+    Set-CpContext -RunDir $run
+    Remove-Item $run -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Describe 'Re-graded: auditpol backup argument is one token' {
     It 'builds /file:<path> as a single argument' {
         Get-CpAuditpolBackupArg -Path 'C:\a b\x.csv' | Should Be '/file:C:\a b\x.csv'
