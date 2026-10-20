@@ -1,7 +1,23 @@
 #!/usr/bin/env bash
 # Updates. CP categories: Operating System Updates / Application Updates.
 
-_upd_sources() { sed -i -E 's/^#[[:space:]]*(deb(-src)?[[:space:]]+(http|https|mirror))/\1/' /etc/apt/sources.list; }
+CP_OFFICIAL_MIRRORS='(deb\.debian\.org|security\.debian\.org|ftp\.[a-z.]*debian\.org|archive\.ubuntu\.com|security\.ubuntu\.com|ports\.ubuntu\.com|[a-z]+\.archive\.ubuntu\.com|packages\.linuxmint\.com|linuxmint\.[a-z.]+|archive\.canonical\.com)'
+
+# 0 = FILE has a disabled OFFICIAL source (commented deb line in *.list, or "Enabled: no" in deb822 *.sources).
+upd_source_needs_fix() {
+    case "$1" in
+        *.sources) grep -qiE '^[[:space:]]*Enabled:[[:space:]]*no' "$1" ;;
+        *) grep -qE "^[[:space:]]*#[[:space:]]*deb[[:space:]]+(\[[^]]*\][[:space:]]+)?https?://$CP_OFFICIAL_MIRRORS" "$1" ;;
+    esac
+}
+
+# Re-enable official sources only - a commented-out unknown repo stays off (it may be planted).
+upd_fix_source() {
+    case "$1" in
+        *.sources) sed -i -E 's/^([[:space:]]*Enabled:[[:space:]]*)no[[:space:]]*$/\1yes/I' "$1" ;;
+        *) sed -i -E "s#^[[:space:]]*\#[[:space:]]*(deb[[:space:]]+(\[[^]]*\][[:space:]]+)?https?://$CP_OFFICIAL_MIRRORS)#\1#" "$1" ;;
+    esac
+}
 _upd_auto() {
     cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
@@ -14,10 +30,14 @@ _upd_run() { DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=no
 
 mod_updates() {
     cp_header "UPDATES"
-    if [ -f /etc/apt/sources.list ] && grep -qE '^#[[:space:]]*deb[[:space:]]+(http|https)' /etc/apt/sources.list; then
-        cp_backup /etc/apt/sources.list
-        cp_act updates "uncomment deb lines in /etc/apt/sources.list" "commented sources = no security updates" _upd_sources
-    fi
+    local f
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+        [ -f "$f" ] || continue
+        if upd_source_needs_fix "$f"; then
+            cp_backup "$f"
+            cp_act updates "re-enable official sources in $f" "disabled sources = no security updates" upd_fix_source "$f"
+        fi
+    done
     grep -rhsE '^[^#]*deb ' /etc/apt/sources.list.d/ /etc/apt/sources.list 2>/dev/null | \
         grep -Ev 'debian\.org|ubuntu\.com|linuxmint\.com|canonical\.com|mirror' | while read -r l; do
         cp_finding updates "unusual apt source: $l"

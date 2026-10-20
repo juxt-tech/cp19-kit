@@ -5,7 +5,8 @@ write a failing test → fix → run every suite → commit → push → tick it
 When the list is empty, the loop runs a discovery pass (shellcheck, PSScriptAnalyzer, systemd test) to find new items. If discovery finds nothing, the loop stops.
 
 ## Bugs / correctness (from the final review)
-- [ ] Linux updates: Debian 12 uses deb822 `/etc/apt/sources.list.d/debian.sources` and Mint uses `official-package-repositories.list`. Commented/disabled sources there aren't fixed or flagged.
+- [x] Linux updates: Debian 12 uses deb822 `/etc/apt/sources.list.d/debian.sources` and Mint uses `official-package-repositories.list`. Commented/disabled sources there aren't fixed or flagged. **Done:** *.list + deb822 handled; only official mirrors re-enabled (unit 80/80, matrix 32/32 x3).
+- [ ] Linux ordering: passwords/firewall install packages (libpam-pwquality, ufw) BEFORE the updates module re-enables disabled sources, so those installs fail on an image with broken sources. Fix sources first (quick step) or retry after; add a planted "Enabled: no" scenario to the matrix.
 - [ ] Windows: non-terminating errors and native exit codes are logged as `ACTION done` (Set-ItemProperty, Set-Service, net.exe, Set-WebConfigurationProperty). Add `-ErrorAction Stop` and check `$LASTEXITCODE`.
 - [ ] Config parsing (both OSes): a `#` inside NEW_PASSWORD truncates it; an apostrophe breaks `xargs` (Linux); a UTF-8 BOM breaks the first key.
 - [ ] Linux passwords: a `pam-auth-update` refusal (local modifications) is still logged as done; `remember=0` counts as ok.

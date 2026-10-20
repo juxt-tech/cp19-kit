@@ -1,0 +1,17 @@
+# Sourced by unit.sh. Apt source repair across sources.list, *.list and deb822 *.sources.
+echo "== updates: apt sources"
+l="$T/official.list"
+printf '# deb http://packages.linuxmint.com vanessa main upstream\n#deb http://archive.ubuntu.com/ubuntu jammy-security main\n# deb http://evil.example/repo stable main\ndeb http://deb.debian.org/debian bookworm main\n' > "$l"
+yes_ "commented official .list needs fix"      upd_source_needs_fix "$l"
+upd_fix_source "$l"
+yes_ "mint line uncommented"                   grep -qx "deb http://packages.linuxmint.com vanessa main upstream" "$l"
+yes_ "ubuntu security line uncommented"        grep -qx "deb http://archive.ubuntu.com/ubuntu jammy-security main" "$l"
+yes_ "unknown third-party source left commented" grep -qx "# deb http://evil.example/repo stable main" "$l"
+no_  "fixed .list needs nothing"               upd_source_needs_fix "$l"
+
+s="$T/debian.sources"
+printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: main\nEnabled: no\n\nTypes: deb\nURIs: http://deb.debian.org/debian-security\nSuites: bookworm-security\nComponents: main\nEnabled: no\n' > "$s"
+yes_ "deb822 Enabled: no needs fix"           upd_source_needs_fix "$s"
+upd_fix_source "$s"
+eq   "deb822 stanzas enabled"                 "$(grep -c '^Enabled: yes' "$s")" "2"
+no_  "fixed .sources needs nothing"           upd_source_needs_fix "$s"
