@@ -78,6 +78,9 @@ function Invoke-CpModSecurityOptions {
     Invoke-CpSeceditSection -Module securityoptions -Section 'Registry Values' -Wanted $script:CpSecurityOptions -Why 'Local Policies > Security Options'
 }
 
+# "/file:" and the path must be ONE argument; "/file:(Join-Path ...)" splits into two.
+function Get-CpAuditpolBackupArg([string]$Path) { "/file:$Path" }
+
 function Invoke-CpModAuditPolicy {
     param($Config)
     Write-CpHeader 'AUDIT POLICY  (success + failure everywhere)'
@@ -88,7 +91,11 @@ function Invoke-CpModAuditPolicy {
     Write-Host "  -    $($weak.Count) of $($csv.Count) subcategories not auditing Success and Failure"
     $ctx = Get-CpContext
     Invoke-CpAction auditpolicy 'auditpol: enable success+failure for all categories' 'scored: every audit category = Success, Failure' {
-        if ($ctx.RunDir) { New-Item -ItemType Directory -Force (Join-Path $ctx.RunDir 'backup') | Out-Null; & auditpol.exe /backup /file:(Join-Path $ctx.RunDir 'backup\auditpol.csv') | Out-Null }
+        if ($ctx.RunDir) {
+            New-Item -ItemType Directory -Force (Join-Path $ctx.RunDir 'backup') | Out-Null
+            $bk = Join-Path $ctx.RunDir 'backup\auditpol.csv'
+            if (-not (Test-Path $bk)) { & auditpol.exe /backup (Get-CpAuditpolBackupArg -Path $bk) | Out-Null }
+        }
         & auditpol.exe /set /category:* /success:enable /failure:enable | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "auditpol exit $LASTEXITCODE" }
     }.GetNewClosure()

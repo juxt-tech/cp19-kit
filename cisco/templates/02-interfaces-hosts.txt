@@ -3,8 +3,10 @@
 configure terminal
  interface <g0/0 or fa0/0>
   description <TO WHAT>
-  ip address <IP> <MASK>                 ! e.g. 64.103.100.101 255.255.255.0
-  no shutdown                            ! interfaces start OFF on routers
+  ! e.g. 64.103.100.101 255.255.255.0
+  ip address <IP> <MASK>
+  ! interfaces start OFF on routers
+  no shutdown
   exit
 !
 ! --- Layer 2 switch management IP (2960) ---

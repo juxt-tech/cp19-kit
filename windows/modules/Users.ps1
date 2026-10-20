@@ -50,13 +50,32 @@ function Get-CpUserPlan {
     return ,$plan.ToArray()
 }
 
+# ADSI fallback: works even when the group holds an orphaned SID (Get-LocalGroupMember then throws).
+function Get-CpAdminMembersAdsi {
+    $name = (Get-LocalGroup -SID 'S-1-5-32-544').Name
+    $g = [ADSI]("WinNT://$env:COMPUTERNAME/$name,group")
+    foreach ($m in @($g.Invoke('Members'))) {
+        $path = $m.GetType().InvokeMember('ADsPath', 'GetProperty', $null, $m, $null)
+        $cls  = $m.GetType().InvokeMember('Class',  'GetProperty', $null, $m, $null)
+        if ($cls -eq 'User' -and $path -match "WinNT://([^/]+/)?$([regex]::Escape($env:COMPUTERNAME))/([^/]+)$") { $Matches[2] }
+    }
+}
+
+function Get-CpAdminMembers {
+    try {
+        @(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop |
+            Where-Object { $_.PrincipalSource -eq 'Local' -and $_.ObjectClass -eq 'User' } |
+            ForEach-Object { ($_.Name -split '\\')[-1] })
+    } catch {
+        Write-Host '  (Get-LocalGroupMember failed - orphaned SID in Administrators? using ADSI instead)' -ForegroundColor Yellow
+        @(Get-CpAdminMembersAdsi)
+    }
+}
+
 function Get-CpLocalUserState {
-    $adminSid = 'S-1-5-32-544'
     $users = @(Get-LocalUser)
     $wmi   = @(Get-CimInstance Win32_UserAccount -Filter 'LocalAccount=True')
-    $admins = @(Get-LocalGroupMember -SID $adminSid -ErrorAction SilentlyContinue |
-        Where-Object { $_.PrincipalSource -eq 'Local' -and $_.ObjectClass -eq 'User' } |
-        ForEach-Object { ($_.Name -split '\\')[-1] })
+    $admins = @(Get-CpAdminMembers)
     [pscustomobject]@{
         LocalUsers         = @($users | ForEach-Object Name)
         Admins             = $admins

@@ -1,0 +1,38 @@
+# Regression tests for the final-review findings (Windows side).
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$kit  = Split-Path -Parent $here
+Import-Module (Join-Path $kit 'lib\CpCommon.psm1') -Force -DisableNameChecking
+. (Join-Path $kit 'modules\Users.ps1')
+. (Join-Path $kit 'modules\System.ps1')
+. (Join-Path $kit 'modules\Policies.ps1')
+
+Describe 'I7 Get-CpAdminMembers falls back when Get-LocalGroupMember throws (orphaned SID)' {
+    Mock Get-LocalGroupMember { throw 'Failed to compare two elements in the array.' }
+    Mock Get-CpAdminMembersAdsi { @('hacker','santa') }
+    It 'returns the ADSI list instead of an empty list' {
+        (Get-CpAdminMembers) -join ',' | Should Be 'hacker,santa'
+    }
+}
+
+Describe 'I8 Get-CpDefenderPolicyPlan' {
+    $vals = @{
+        'DisableAntiSpyware' = 1
+        'DisableAntiVirus' = 0
+        'Real-Time Protection\DisableRealtimeMonitoring' = 1
+        'Real-Time Protection\DisableBehaviorMonitoring' = 1
+        'Exclusions\Extensions\.exe' = 0
+        'SomethingHarmless' = 1
+    }
+    $plan = Get-CpDefenderPolicyPlan -Values $vals
+    It 'removes DisableAntiSpyware=1'      { $plan -contains 'DisableAntiSpyware' | Should Be $true }
+    It 'removes real-time disable'         { $plan -contains 'Real-Time Protection\DisableRealtimeMonitoring' | Should Be $true }
+    It 'removes policy exclusions'         { $plan -contains 'Exclusions\Extensions\.exe' | Should Be $true }
+    It 'leaves a 0 Disable* value alone'   { $plan -contains 'DisableAntiVirus' | Should Be $false }
+    It 'leaves unrelated values alone'     { $plan -contains 'SomethingHarmless' | Should Be $false }
+}
+
+Describe 'Re-graded: auditpol backup argument is one token' {
+    It 'builds /file:<path> as a single argument' {
+        Get-CpAuditpolBackupArg -Path 'C:\a b\x.csv' | Should Be '/file:C:\a b\x.csv'
+    }
+}

@@ -9,7 +9,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - [ ] Open a terminal: `sudo -i` is NOT needed; use `sudo` per command.
 - [ ] Get the kit: `wget -qO- https://github.com/<you>/<repo>/archive/main.tar.gz | tar xz && cd <repo>-main`
 - [ ] `cp config/cp-config.example.txt cp-config.txt && nano cp-config.txt` and fill it from the README.
-  - Services use **systemd unit names**: `ssh`, `vsftpd`, `apache2`, `nginx`, `smbd`, `mysql`, `postfix`.
+  - Services use **systemd unit names**: `ssh`, `vsftpd`, `apache2`, `nginx`, `smbd`, `mariadb` (Debian 12's MySQL), `postfix`. The kit also understands README words like `mysql`, `samba`, `ftp`, `apache` and protects every unit they could mean.
   - Your own username goes in `ADMINS`.
 
 ## 1. Forensics FIRST
@@ -35,6 +35,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 | # | Module | What it does | Category |
 |---|---|---|---|
 | 1 | users | delete non-README users (home dirs kept); create missing; sudo group = README admins; delete extra UID-0 accounts; passwords for empty-password users; lock root; guest login off | User Auditing |
+| ⚠ | before `passwords` | open a **second terminal and run `sudo -i`** first. Lockout applies to sudo too: 5 wrong passwords locks YOU out for 30 min. Unlock from the root shell: `faillock --user <name> --reset` | — |
 | 2 | passwords | `login.defs` max 90 / min 10 / warn 7 (+ `chage` existing users); pwquality minlen 10 + every char class; `remember=5`; remove `nullok`; faillock 5 tries / 30 min (via pam-auth-update, self-checking) | Account Policies |
 | 3 | firewall | ufw on, deny in, allow out, open ports for critical services, logging | Defensive Countermeasures |
 | 4 | ssh | (only if ssh is critical) PermitRootLogin no, no empty passwords, MaxAuthTries 4, X11 off… validated with `sshd -t` | App Security Settings |
@@ -57,7 +58,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 
 ## 5. Manual-only items
 - [ ] **Critical service configs** the README cares about. These are worth a lot and are image-specific:
-  - vsftpd (`/etc/vsftpd.conf`): `anonymous_enable=NO`, `local_enable=YES`, `ssl_enable=YES`, `chroot_local_user=YES`; list users in `/etc/ftpusers` (old club review).
+  - vsftpd (`/etc/vsftpd.conf`): `anonymous_enable=NO`, `local_enable=YES`, `ssl_enable=YES`, `chroot_local_user=YES`. `/etc/ftpusers` is a **DENY list**: system accounts (root, daemon…) belong there; README users who need FTP must NOT be in it, and unauthorized FTP users should be (old club review).
   - apache2: `ServerTokens Prod`, `ServerSignature Off`, `Options -Indexes`, TraceEnable Off.
   - nginx: `server_tokens off;`, check `root` points where the README says, watch `alias` off-by-slash.
   - samba: `guest ok = no`, `map to guest = never`, `smb encrypt = required`, `min protocol = SMB2`.

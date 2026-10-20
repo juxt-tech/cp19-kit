@@ -6,25 +6,31 @@ configure terminal
  ip route 0.0.0.0 0.0.0.0 <NEXT_HOP_IP>
 !
 ! --- EIGRP (used in the CP19 practice round) ---
- router eigrp <AS_NUMBER>               ! the AS must match the neighbors (e.g. 1)
-  network <64.103.100.0> <0.0.0.255>    ! one line per connected network, WILDCARD mask
+ ! the AS must match the neighbors (e.g. 1)
+ router eigrp <AS_NUMBER>
+  ! one line per connected network, WILDCARD mask
+  network <64.103.100.0> <0.0.0.255>
   network <100.103.100.0> <0.0.0.255>
   no auto-summary
-  passive-interface <g0/1>              ! only if asked: LAN-facing ports don't send hellos
+  ! only if asked: LAN-facing ports don't send hellos
+  passive-interface <g0/1>
   exit
 !
 ! --- OSPF single area ---
  router ospf <1>
-  router-id <1.1.1.1>                   ! set it before neighbors form, or: clear ip ospf process
+  ! set it before neighbors form, or: clear ip ospf process
+  router-id <1.1.1.1>
   network <10.0.10.0> <0.0.0.255> area 0
   network <10.1.1.0> <0.0.0.3> area 0
   passive-interface <g0/1>
-  default-information originate         ! only on the router with the internet default route
+  ! only on the router with the internet default route
+  default-information originate
   exit
 ! per-interface alternative:
  interface g0/0
   ip ospf 1 area 0
-  ip ospf priority 255                  ! wins the DR election (0 = never DR)
+  ! wins the DR election (0 = never DR)
+  ip ospf priority 255
   ip ospf cost 10
   exit
 end

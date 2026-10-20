@@ -75,9 +75,41 @@ function Invoke-CpModFirewall {
         ForEach-Object { Add-CpFinding firewall "custom inbound ALLOW rule: '$($_.DisplayName)'  (needed by README?)" }
 }
 
+# Pure: which Defender *policy* values to delete. Values = @{ 'Sub\Key\ValueName' = data }.
+# Group Policy values beat Set-MpPreference, so planted "Disable*=1" policies must go.
+function Get-CpDefenderPolicyPlan {
+    param([Parameter(Mandatory)][hashtable]$Values)
+    $out = @()
+    foreach ($k in $Values.Keys) {
+        $leaf = ($k -split '\\')[-1]
+        if ($k -like 'Exclusions\*') { $out += $k; continue }
+        if ($leaf -like 'Disable*' -and "$($Values[$k])" -ne '0') { $out += $k }
+    }
+    return ,$out
+}
+
+function Get-CpDefenderPolicyValues {
+    $base = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
+    $h = @{}
+    if (-not (Test-Path $base)) { return $h }
+    foreach ($key in @(Get-Item $base) + @(Get-ChildItem $base -Recurse -ErrorAction SilentlyContinue)) {
+        $rel = ($key.PSPath -replace '^.*\\Windows Defender\\?', '')
+        foreach ($v in $key.GetValueNames()) { if ($v) { $h[$(if ($rel) { "$rel\$v" } else { $v })] = $key.GetValue($v) } }
+    }
+    return $h
+}
+
 function Invoke-CpModDefender {
     param($Config)
     Write-CpHeader 'WINDOWS DEFENDER'
+    $base = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
+    foreach ($p in Get-CpDefenderPolicyPlan -Values (Get-CpDefenderPolicyValues)) {
+        $sub = Split-Path $p -Parent; $name = Split-Path $p -Leaf
+        $path = if ($sub) { Join-Path $base $sub } else { $base }
+        Invoke-CpAction defender "delete Defender policy value $p" 'group-policy Disable*/exclusions override the Defender settings' {
+            Backup-CpRegistry 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender'
+            Remove-ItemProperty -Path $path -Name $name -ErrorAction Stop }.GetNewClosure()
+    }
     $mp = Get-MpPreference -ErrorAction SilentlyContinue
     if (-not $mp) {
         Add-CpFinding defender 'Defender not available. Server: Install-WindowsFeature Windows-Defender (then reboot). Third-party AV? check README.'

@@ -2,23 +2,33 @@
 ! Replace <CAPS> with values from the PT Activity instructions. "!" lines are comments - don't type them.
 enable
 configure terminal
- hostname <HOSTNAME>                     ! exact spelling from the instructions
- no ip domain-lookup                     ! typos no longer hang for 30 seconds
- enable secret <ENABLE_SECRET>           ! hashed password for privileged (#) mode
- service password-encryption             ! hides every plain-text password in show run
- banner motd #Authorized access only!#   ! use the banner text from the instructions
- security passwords min-length 10        ! only if asked
- login block-for 120 attempts 3 within 60 ! only if asked (brute-force lockout)
+ ! exact spelling from the instructions
+ hostname <HOSTNAME>
+ ! typos no longer hang for 30 seconds
+ no ip domain-lookup
+ ! hashed password for privileged (#) mode
+ enable secret <ENABLE_SECRET>
+ ! hides every plain-text password in show run
+ service password-encryption
+ ! use the banner text from the instructions
+ banner motd #Authorized access only#
+ ! only if asked
+ security passwords min-length 10
+ ! only if asked (brute-force lockout)
+ login block-for 120 attempts 3 within 60
 !
 line console 0
  password <CONSOLE_PW>
  login
- logging synchronous                     ! log messages stop breaking your typing
+ ! log messages stop breaking your typing
+ logging synchronous
  exec-timeout 5 0
  exit
-line vty 0 15                            ! routers may only have 0 4 - use what exists
+! routers may only have 0 4 - use what exists
+line vty 0 15
  password <VTY_PW>
- login                                   ! (use "login local" if SSH/usernames are required - see 05)
+ ! (use "login local" if SSH/usernames are required - see 05)
+ login
  exec-timeout 5 0
  exit
 end

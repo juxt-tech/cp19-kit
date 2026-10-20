@@ -11,30 +11,37 @@ configure terminal
  interface fa0/<2>
   switchport mode access
   switchport access vlan <10>
-  spanning-tree portfast                ! only on ports to end devices
-  spanning-tree bpduguard enable        ! only if asked
+  ! only on ports to end devices
+  spanning-tree portfast
+  ! only if asked
+  spanning-tree bpduguard enable
   exit
 !
 ! --- Trunk (switch-to-switch / switch-to-router) ---
  interface g0/1
-  switchport trunk encapsulation dot1q  ! ONLY on 3560/3650 L3 switches; 2960 rejects it (that's fine)
+  ! ONLY on 3560/3650 L3 switches; 2960 rejects it (that's fine)
+  switchport trunk encapsulation dot1q
   switchport mode trunk
-  switchport trunk allowed vlan 1,10,20 ! ONE line, comma list. Three separate lines overwrite each other!
-  switchport trunk native vlan <99>     ! only if asked
+  ! ONE line, comma list. Three separate lines overwrite each other!
+  switchport trunk allowed vlan 1,10,20
+  ! only if asked
+  switchport trunk native vlan <99>
   exit
 end
 write memory
 !
 ! ===== Inter-VLAN routing option A: Layer 3 switch (3560/3650) =====
 configure terminal
- ip routing                             ! without this the L3 switch will NOT route
+ ! without this the L3 switch will NOT route
+ ip routing
  interface vlan 10
   ip address <10.0.10.1> <255.255.255.0>
   no shutdown
  interface vlan 20
   ip address <10.0.20.1> <255.255.255.0>
   no shutdown
- interface g1/0/1                       ! routed uplink port
+ ! routed uplink port
+ interface g1/0/1
   no switchport
   ip address <IP> <MASK>
   no shutdown
