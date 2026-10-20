@@ -21,7 +21,7 @@ Audit-first, README-driven hardening scripts and checklists for CyberPatriot 19.
 ### Windows (PowerShell as Administrator)
 ```powershell
 cd $env:USERPROFILE\Desktop
-iwr https://github.com/<you>/<repo>/archive/refs/heads/main.zip -OutFile kit.zip; Expand-Archive kit.zip .; cd <repo>-main
+iwr https://github.com/juxt-tech/cp19-kit/archive/refs/heads/main.zip -OutFile kit.zip; Expand-Archive kit.zip .; cd cp19-kit-main
 copy config\cp-config.example.txt cp-config.txt; notepad cp-config.txt          # fill from the README
 powershell -ExecutionPolicy Bypass -File .\windows\harden.ps1 -All              # AUDIT: read the [WOULD] lines
 powershell -ExecutionPolicy Bypass -File .\windows\harden.ps1 -Apply            # menu, one module at a time
@@ -30,7 +30,7 @@ Run folder: `C:\cpkit-runs\<time>\` (log.txt, findings.txt, backup\, listening.t
 
 ### Linux
 ```bash
-wget -qO- https://github.com/<you>/<repo>/archive/refs/heads/main.tar.gz | tar xz && cd <repo>-main
+wget -qO- https://github.com/juxt-tech/cp19-kit/archive/refs/heads/main.tar.gz | tar xz && cd cp19-kit-main
 cp config/cp-config.example.txt cp-config.txt && nano cp-config.txt             # fill from the README
 sudo bash linux/harden.sh --all                                                  # AUDIT
 sudo bash linux/harden.sh --apply                                                # menu, one module at a time

@@ -7,7 +7,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - [ ] VMware snapshot `start`.
 - [ ] Read the README twice: admins, users, **critical services** (ssh? ftp? apache? samba?), required software, special app notes.
 - [ ] Open a terminal: `sudo -i` is NOT needed; use `sudo` per command.
-- [ ] Get the kit: `wget -qO- https://github.com/<you>/<repo>/archive/main.tar.gz | tar xz && cd <repo>-main`
+- [ ] Get the kit: `wget -qO- https://github.com/juxt-tech/cp19-kit/archive/main.tar.gz | tar xz && cd cp19-kit-main`
 - [ ] `cp config/cp-config.example.txt cp-config.txt && nano cp-config.txt` and fill it from the README.
   - Services use **systemd unit names**: `ssh`, `vsftpd`, `apache2`, `nginx`, `smbd`, `mariadb` (Debian 12's MySQL), `postfix`. The kit also understands README words like `mysql`, `samba`, `ftp`, `apache` and protects every unit they could mean.
   - Your own username goes in `ADMINS`.
