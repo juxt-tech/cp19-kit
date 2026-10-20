@@ -124,3 +124,39 @@ cp_act() {
 }
 
 cp_header() { echo; echo "===== $1 ====="; }
+
+# Current value of KEY in a "KEY value" / "KEY=value" / "KEY = value" file (uncommented lines only).
+cp_conf_get() {
+    local file="$1" key="$2"
+    [ -f "$file" ] || return 0
+    awk -v k="$key" '
+        { line=$0; sub(/^[ \t]+/, "", line) }
+        line ~ "^" k "([ \t]*=[ \t]*|[ \t]+)" {
+            sub("^" k "([ \t]*=[ \t]*|[ \t]+)", "", line); sub(/[ \t]+$/, "", line); val=line
+        }
+        END { if (val != "") print val }' "$file"
+}
+
+# Set KEY to VALUE. Replaces uncommented occurrences; else the first commented one; else appends.
+# Returns 0 if changed, 2 if already set. Backs the file up first. SEP defaults to one space.
+cp_set_conf() {
+    local file="$1" key="$2" value="$3" sep="${4:- }" tmp
+    [ "$(cp_conf_get "$file" "$key")" = "$value" ] && return 2
+    [ -n "$CP_RUN" ] && cp_backup "$file"
+    tmp="$(mktemp)"
+    awk -v k="$key" -v v="$value" -v s="$sep" '
+        { lines[NR]=$0; l=$0; sub(/^[ \t]+/, "", l)
+          if (l ~ "^" k "([ \t]*=|[ \t]+|$)") { live[NR]=1; nlive++ }
+          else if (!firstc && l ~ "^#[ \t]*" k "([ \t]*=|[ \t]+|$)") firstc=NR }
+        END {
+          done=0
+          for (i=1;i<=NR;i++) {
+            if (i in live) { if (!done) { print k s v; done=1 } ; continue }
+            if (i==firstc && !nlive) { print k s v; done=1; continue }
+            print lines[i]
+          }
+          if (!done) print k s v
+        }' "$file" > "$tmp"
+    cat "$tmp" > "$file"; rm -f "$tmp"
+    return 0
+}
