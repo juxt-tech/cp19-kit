@@ -11,7 +11,10 @@ mk prancer 'Pr@ncer2026x';    usermod -aG sudo prancer   # authorized USER wrong
 mk hacker  'Hack3r#2026xx'                               # not in README
 useradd -m -s /bin/bash dasher; passwd -d dasher >/dev/null   # authorized user, EMPTY password
 useradd -o -u 0 -g 0 -M -s /bin/bash toor                     # hidden root account
+useradd -o -u 0 -g 0 -m -d /home/blitzen -s /bin/bash blitzen      # README user secretly UID 0
 # cupid is in the README but missing on the box
+echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf                    # loads AFTER sysctl.d
+printf '\nMatch User sftponly\n    ForceCommand internal-sftp\n' >> /etc/ssh/sshd_config
 
 chmod 666 /etc/shadow
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
@@ -22,7 +25,7 @@ mkdir -p /home/santa/Music && echo "not really music" > /home/santa/Music/song.m
 
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
-USERS=prancer dasher cupid
+USERS=prancer dasher cupid blitzen
 CRITICAL_SERVICES=vsftpd ssh
 ALLOWED_SOFTWARE=nmap
 NEW_PASSWORD=Cyb3rP@triot!2026

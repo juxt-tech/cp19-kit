@@ -22,6 +22,11 @@ t "ufw active"                            sh -c "ufw status | grep -q 'Status: a
 t "ufw allows ftp (critical)"             sh -c "ufw status | grep -qE '^21/tcp'"
 t "ufw allows ssh (critical)"             sh -c "ufw status | grep -qE '^22/tcp'"
 
+t "UID-0 README user blitzen kept"         id blitzen
+t "blitzen no longer UID 0"               sh -c "[ \$(id -u blitzen) -ge 1000 ]"
+t "sysctl.conf override commented out"    grep -q "^# cpkit disabled: net.ipv4.ip_forward=1" /etc/sysctl.conf
+t "sshd keys inserted above Match block"  sh -c "awk '/^Match/{m=NR} /^UsePAM yes/{u=NR} END{exit !(u && u<m)}' /etc/ssh/sshd_config"
+
 echo "== verify: authorized things untouched"
 t "santa still exists"                    id santa
 t "santa still in sudo"                   sh -c "id -nG santa | grep -qw sudo"

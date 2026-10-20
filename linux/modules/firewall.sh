@@ -19,15 +19,18 @@ mod_firewall() {
         cp_act firewall "install ufw" "no firewall tool present" _fw_install
         command -v ufw >/dev/null || return 0
     fi
-    local status s port
+    local status s c port ports="" known
     status="$(ufw status verbose 2>/dev/null)"
-    for s in $CP_CRITICAL; do
-        s="${s%.service}"
-        for port in ${CP_FW_PORTS[$s]:-}; do
-            if echo "$status" | grep -qE "^${port%/*}(/${port#*/})?[[:space:]].*ALLOW"; then echo "  ok   $port allowed ($s)"
-            else cp_act firewall "ufw allow $port" "critical service $s must stay reachable" ufw allow "$port"; fi
+    for c in $CP_CRITICAL; do
+        known=0
+        for s in $(CP_CRITICAL="$c"; cp_expand_critical; echo "$CP_CRITICAL_ALL"); do
+            [ -n "${CP_FW_PORTS[$s]:-}" ] && { known=1; ports="$ports ${CP_FW_PORTS[$s]}"; }
         done
-        [ -z "${CP_FW_PORTS[$s]:-}" ] && cp_finding firewall "critical service '$s' has no known port - open it by hand if it listens on the network"
+        [ "$known" = 0 ] && cp_finding firewall "critical service '$c' has no known port - open it by hand if it listens on the network"
+    done
+    for port in $(echo $ports | tr ' ' '\n' | awk 'NF && !seen[$0]++'); do
+        if echo "$status" | grep -qE "^${port%/*}(/${port#*/})?[[:space:]].*ALLOW"; then echo "  ok   $port allowed"
+        else cp_act firewall "ufw allow $port" "a README critical service listens here" ufw allow "$port"; fi
     done
     echo "$status" | grep -q "Default: deny (incoming)" && echo "  ok   default deny incoming" \
         || cp_act firewall "ufw default deny incoming" "block unsolicited inbound traffic" ufw default deny incoming

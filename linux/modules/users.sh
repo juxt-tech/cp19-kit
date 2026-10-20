@@ -5,27 +5,29 @@
 # Pure planner. Args: "HUMANS" "SUDO_MEMBERS" "UID0_ACCOUNTS" "EMPTY_PASSWORD_ACCOUNTS"
 # Prints one action per line. Reads only its args + CP_ADMINS/CP_USERS/SUDO_USER.
 plan_users() {
-    local humans="$1" sudoers="$2" uid0="$3" emptypw="$4" u
+    local humans="$1" sudoers="$2" uid0="$3" emptypw="$4" u me="${CP_ME:-${SUDO_USER:-}}"
     if [ -z "$CP_ADMINS" ]; then
         echo "users: ADMINS is empty in the config - refusing to plan (fill it from the README)" >&2
         return 1
     fi
     for u in $humans; do
-        if ! cp_in_list "$u" "$CP_ADMINS $CP_USERS" && [ "$u" != "${SUDO_USER:-}" ]; then
+        if ! cp_in_list "$u" "$CP_ADMINS $CP_USERS" && [ "$u" != "$me" ] && [ "$u" != "${SUDO_USER:-}" ]; then
             echo "REMOVE_USER $u"
         fi
     done
     for u in $CP_ADMINS $CP_USERS; do
-        cp_in_list "$u" "$humans" || echo "ADD_USER $u"
+        cp_in_list "$u" "$humans $uid0" || echo "ADD_USER $u"
     done
     for u in $sudoers; do
-        cp_in_list "$u" "$CP_ADMINS" || [ "$u" = "${SUDO_USER:-}" ] || echo "DEL_SUDO $u"
+        cp_in_list "$u" "$CP_ADMINS" || [ "$u" = "$me" ] || [ "$u" = "${SUDO_USER:-}" ] || echo "DEL_SUDO $u"
     done
     for u in $CP_ADMINS; do
         cp_in_list "$u" "$sudoers" || echo "ADD_SUDO $u"
     done
     for u in $uid0; do
-        [ "$u" = "root" ] || echo "DEL_UID0 $u"
+        [ "$u" = "root" ] && continue
+        # A README user secretly given UID 0 keeps the account but gets a normal UID.
+        if cp_in_list "$u" "$CP_ADMINS $CP_USERS" || [ "$u" = "$me" ]; then echo "FIX_UID0 $u"; else echo "DEL_UID0 $u"; fi
     done
     for u in $emptypw; do
         [ "$u" = "root" ] || echo "SET_PASS $u"
@@ -41,6 +43,19 @@ _users_state() {
 }
 
 _set_pass() { echo "$1:$CP_NEWPASS" | chpasswd; }
+
+# Give a UID-0 README user a normal UID/GID. usermod refuses (UID 0 always "in use"), so edit passwd.
+_fix_uid0() {
+    local u="$1" nu g h tmp
+    nu="$(awk -F: '$3>=1000 && $3<60000 {print $3}' /etc/passwd | sort -n | tail -1)"; nu=$(( ${nu:-999} + 1 ))
+    getent group "$u" >/dev/null || groupadd -g "$nu" "$u" 2>/dev/null || groupadd "$u"
+    g="$(getent group "$u" | cut -d: -f3)"
+    tmp="$(mktemp)"
+    awk -F: -v OFS=: -v u="$u" -v nu="$nu" -v g="$g" '$1==u {$3=nu; $4=g} 1' /etc/passwd > "$tmp" && cat "$tmp" > /etc/passwd
+    rm -f "$tmp"
+    h="$(getent passwd "$u" | cut -d: -f6)"
+    if [ -d "$h" ] && [ "$h" != / ] && [ "$h" != /root ]; then chown -R "$u:$u" "$h"; fi
+}
 
 mod_users() {
     cp_header "USERS  (README authorized admins/users)"
@@ -61,6 +76,8 @@ mod_users() {
             ADD_SUDO)    cp_act users "add $u to sudo" "authorized admin" gpasswd -a "$u" sudo ;;
             DEL_UID0)    cp_backup /etc/passwd; cp_backup /etc/shadow
                          cp_act users "delete hidden root account $u (UID 0)" "only root may have UID 0" userdel -f "$u" ;;
+            FIX_UID0)    cp_backup /etc/passwd
+                         cp_act users "give README user $u a normal UID (has UID 0 = secret root)" "only root may have UID 0; keep the account" _fix_uid0 "$u" ;;
             SET_PASS)
                 if [ -z "$CP_NEWPASS" ]; then cp_finding users "$u has an EMPTY password - set one by hand"; continue; fi
                 cp_act users "set password for $u" "account has an empty password" _set_pass "$u" ;;

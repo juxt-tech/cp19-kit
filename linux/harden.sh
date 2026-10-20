@@ -50,6 +50,8 @@ if [ -z "$CONFIG" ]; then
     for c in ./cp-config.txt "$KIT/cp-config.txt" "$KIT/../cp-config.txt"; do [ -f "$c" ] && { CONFIG="$c"; break; }; done
 fi
 cp_load_config "${CONFIG:-./cp-config.txt}" || exit 1
+cp_detect_me
+export CP_ME
 
 CP_RUN="/root/cpkit-runs/$(date +%Y%m%d-%H%M%S)"
 [ -e "$CP_RUN" ] && CP_RUN="$CP_RUN-$$"
@@ -59,7 +61,7 @@ export CP_RUN CP_MODE CP_YES
 echo "================================================================"
 echo " CyberPatriot Linux kit   mode: $(echo "$CP_MODE" | tr a-z A-Z)"
 echo " config : $CONFIG"
-echo " admins : $CP_ADMINS"
+echo " admins : $CP_ADMINS      (you: ${CP_ME:-unknown - run with sudo from your own account})"
 echo " users  : $CP_USERS"
 echo " critical services: ${CP_CRITICAL:-(none)}    allowed software: ${CP_ALLOWED:-(none)}"
 echo " run dir: $CP_RUN   (log.txt, findings.txt, backup/)"

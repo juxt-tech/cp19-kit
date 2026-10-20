@@ -9,7 +9,40 @@ CP_MODE="${CP_MODE:-audit}"     # audit | apply
 CP_YES="${CP_YES:-0}"           # 1 = don't prompt (tests only)
 CP_RUN="${CP_RUN:-}"            # run directory: log.txt, findings.txt, backup/
 CP_ADMINS=""; CP_USERS=""; CP_CRITICAL=""; CP_ALLOWED=""; CP_NEWPASS=""
+CP_CRITICAL_ALL=""              # CP_CRITICAL + every alias/unit name it implies
+CP_ME="${CP_ME:-}"              # the human running the kit (never removed/demoted)
 CP_SCORING_RE='cyberpatriot|cpscor|scoring|aeacus'
+
+# README words -> the unit names they can mean on Mint/Debian/Ubuntu.
+declare -A CP_SERVICE_ALIASES=(
+    [ssh]="ssh sshd openssh-server" [sshd]="ssh sshd"
+    [ftp]="vsftpd proftpd pure-ftpd" [vsftpd]="vsftpd" [proftpd]="proftpd"
+    [samba]="smbd nmbd samba" [smb]="smbd nmbd" [smbd]="smbd nmbd"
+    [mysql]="mysql mariadb mysqld" [mariadb]="mariadb mysql mysqld" [mysqld]="mysql mariadb mysqld"
+    [apache]="apache2 httpd" [apache2]="apache2" [httpd]="apache2 httpd"
+    [postgres]="postgresql" [postgresql]="postgresql"
+    [bind]="bind9 named" [bind9]="bind9 named" [named]="bind9 named" [dns]="bind9 named"
+    [mail]="postfix dovecot" [smtp]="postfix exim4" [cups]="cups cups-browsed" [printing]="cups cups-browsed"
+    [nfs]="nfs-server nfs-kernel-server rpcbind" [web]="apache2 nginx" [vnc]="x11vnc vncserver xrdp"
+)
+
+# Who is running this? sudo -> SUDO_USER; "sudo su -" -> logname / who am i.
+cp_detect_me() {
+    local me="${SUDO_USER:-}"
+    [ -z "$me" ] || [ "$me" = root ] && me="$(logname 2>/dev/null || true)"
+    [ -z "$me" ] || [ "$me" = root ] && me="$(who am i 2>/dev/null | awk '{print $1}')"
+    [ "$me" = root ] && me=""
+    CP_ME="$me"
+}
+
+cp_expand_critical() {
+    local c base out=""
+    for c in $CP_CRITICAL; do
+        base="$(echo "${c%.service}" | tr '[:upper:]' '[:lower:]')"
+        out="$out $base ${CP_SERVICE_ALIASES[$base]:-}"
+    done
+    CP_CRITICAL_ALL="$(echo $out | tr ' ' '\n' | awk 'NF && !seen[$0]++' | xargs)"
+}
 
 cp_require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -41,6 +74,7 @@ cp_load_config() {
             *) echo "  (config: unknown key '$key' ignored)" >&2 ;;
         esac
     done < "$file"
+    cp_expand_critical
     return 0
 }
 
@@ -55,6 +89,7 @@ cp_is_protected_user() {
     local u="$1" uid
     cp_in_list "$u" "$CP_ADMINS $CP_USERS" && return 0
     [ -n "${SUDO_USER:-}" ] && [ "$u" = "$SUDO_USER" ] && return 0
+    [ -n "${CP_ME:-}" ] && [ "$u" = "$CP_ME" ] && return 0
     [ "$u" = "root" ] && return 0
     uid="$(id -u "$u" 2>/dev/null || echo "")"
     # system accounts (UID < 1000) are never removed by the users module
@@ -66,9 +101,9 @@ cp_is_protected_service() {
     local s c
     s="$(echo "${1%.service}" | tr '[:upper:]' '[:lower:]')"
     echo "$s" | grep -Eqi "$CP_SCORING_RE" && return 0
-    for c in $CP_CRITICAL; do
-        [ "$s" = "$(echo "${c%.service}" | tr '[:upper:]' '[:lower:]')" ] && return 0
-    done
+    s="${s%.socket}"; s="${s%.path}"
+    [ -n "$CP_CRITICAL_ALL" ] || cp_expand_critical
+    cp_in_list "$s" "$CP_CRITICAL_ALL" && return 0
     return 1
 }
 
@@ -132,12 +167,16 @@ cp_conf_get() {
     awk -v k="$key" '
         { line=$0; sub(/^[ \t]+/, "", line) }
         line ~ "^" k "([ \t]*=[ \t]*|[ \t]+)" {
-            sub("^" k "([ \t]*=[ \t]*|[ \t]+)", "", line); sub(/[ \t]+$/, "", line); val=line
+            sub("^" k "([ \t]*=[ \t]*|[ \t]+)", "", line); sub(/[ \t]+$/, "", line)
+            if (n && line != val) conflict=1
+            if (!n) val=line
+            n++
         }
-        END { if (val != "") print val }' "$file"
+        END { if (conflict) print "(conflicting duplicates)"; else if (val != "") print val }' "$file"
 }
 
-# Set KEY to VALUE. Replaces uncommented occurrences; else the first commented one; else appends.
+# Set KEY to VALUE. Replaces every uncommented occurrence; else the first commented one; else
+# inserts it above the first "Match" block (sshd) or at the end.
 # Returns 0 if changed, 2 if already set. Backs the file up first. SEP defaults to one space.
 cp_set_conf() {
     local file="$1" key="$2" value="$3" sep="${4:- }" tmp
@@ -146,11 +185,14 @@ cp_set_conf() {
     tmp="$(mktemp)"
     awk -v k="$key" -v v="$value" -v s="$sep" '
         { lines[NR]=$0; l=$0; sub(/^[ \t]+/, "", l)
+          if (!matchl && l ~ /^Match[ \t]/) matchl=NR
           if (l ~ "^" k "([ \t]*=|[ \t]+|$)") { live[NR]=1; nlive++ }
           else if (!firstc && l ~ "^#[ \t]*" k "([ \t]*=|[ \t]+|$)") firstc=NR }
         END {
+          if (matchl && firstc > matchl) firstc=0      # never land inside a Match block
           done=0
           for (i=1;i<=NR;i++) {
+            if (i==matchl && !done && !nlive && !firstc) { print k s v; done=1 }
             if (i in live) { if (!done) { print k s v; done=1 } ; continue }
             if (i==firstc && !nlive) { print k s v; done=1; continue }
             print lines[i]

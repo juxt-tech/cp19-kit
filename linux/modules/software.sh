@@ -30,21 +30,36 @@ plan_software() {
     done
 }
 
+# Pure: read `apt-get -s purge PKG` output on stdin, print every OTHER package it would remove.
+apt_sim_extra() {
+    awk -v p="$1" '/^(Purg|Remv) / && $2 != p {print $2}'
+}
+
 mod_software() {
     cp_header "SOFTWARE  (hacking tools, games, P2P)"
-    local installed plan act p
+    local installed plan act p purges extra e
     installed="$(dpkg-query -W -f='${Package} ${Status}\n' 2>/dev/null | awk '$4=="installed"{print $1}' | xargs)"
     plan="$(plan_software "$installed")"
+    purges="$(echo "$plan" | awk '$1=="PURGE"{print $2}' | xargs)"
     [ -z "$plan" ] && echo "  ok   no known bad packages"
     while read -r act p; do
         case "$act" in
-            PURGE)  cp_act software "apt purge $p" "prohibited tool/game (not in ALLOWED_SOFTWARE)" \
-                        sh -c "DEBIAN_FRONTEND=noninteractive apt-get purge -y '$p'" ;;
+            PURGE)
+                # Never let a purge silently take other packages with it (e.g. a metapackage holding ufw).
+                extra=""
+                for e in $(apt-get -s purge "$p" 2>/dev/null | apt_sim_extra "$p"); do
+                    cp_in_list "$e" "$purges" || extra="$extra $e"
+                done
+                if [ -n "$extra" ]; then
+                    cp_finding software "NOT purged $p: it would also remove$extra - decide by hand"
+                    continue
+                fi
+                cp_act software "apt purge $p" "prohibited tool/game (not in ALLOWED_SOFTWARE)" \
+                    sh -c "DEBIAN_FRONTEND=noninteractive apt-get purge -y '$p'" ;;
             REVIEW) cp_finding software "dual-use package $p installed - remove only if README doesn't need it" ;;
         esac
     done <<< "$plan"
-    [ "$CP_MODE" = apply ] && [ -n "$plan" ] && cp_act software "apt autoremove" "remove leftover dependencies" \
-        sh -c "DEBIAN_FRONTEND=noninteractive apt-get autoremove -y"
+    [ -n "$plan" ] && cp_finding software "leftover dependencies: run 'sudo apt-get autoremove' by hand AFTER reading its list"
     command -v snap >/dev/null && snap list 2>/dev/null | awk 'NR>1{print $1}' | while read -r s; do
         cp_finding software "snap installed: $s"
     done
