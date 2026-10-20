@@ -1,0 +1,25 @@
+# CyberPatriot kit config. Fill this in FROM THE ROUND README before running anything.
+# One KEY=value per line. Lists are space-separated. Lines starting with # are ignored.
+# Save your copy as cp-config.txt next to the script.
+
+# Authorized administrators (README "Authorized Administrators"), including yourself.
+ADMINS=santa prancer
+
+# Authorized normal users (README "Authorized Users").
+USERS=cupid dasher
+
+# Services the README says must keep running.
+# Linux: systemd unit names (ssh vsftpd apache2 smbd ...). Windows: service names (TermService W3SVC ...).
+CRITICAL_SERVICES=ssh vsftpd
+
+# Software the README says is allowed/required (never removed or flagged).
+ALLOWED_SOFTWARE=firefox nmap
+
+# Password given to users the script creates or whose password is blank/insecure.
+NEW_PASSWORD=Cyb3rP@triot!2026
+
+# Windows only: yes if the README requires Remote Desktop.
+KEEP_RDP=no
+
+# Windows only: share names the README requires (besides the default admin shares).
+KEEP_SHARES=
