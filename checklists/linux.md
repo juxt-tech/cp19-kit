@@ -37,7 +37,7 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 | 1 | users | delete non-README users (home dirs kept); create missing; sudo group = README admins; delete extra UID-0 accounts; passwords for empty-password users; lock root; guest login off | User Auditing |
 | 1b | sources | re-enables official apt sources (Debian `.sources`, Mint/Ubuntu `.list`) + `apt-get update`; unknown repos stay off | OS Updates |
 | ⚠ | before `passwords` | open a **second terminal and run `sudo -i`** first. Lockout applies to sudo too: 5 wrong passwords locks YOU out for 30 min. Unlock from the root shell: `faillock --user <name> --reset` | — |
-| 2 | passwords | `login.defs` max 90 / min 10 / warn 7 (+ `chage` existing users); pwquality minlen 10 + every char class; `remember=5`; remove `nullok`; faillock 5 tries / 30 min (via pam-auth-update, self-checking) | Account Policies |
+| 2 | passwords | `login.defs` max 90 / min 10 / warn 7 (+ `chage` existing users); pwquality minlen 10 + every char class; `remember=5`; remove `nullok`; faillock 5 tries / 30 min (via pam-auth-update, self-checking). If it says **pam_faillock was NOT added**, common-auth was hand-edited: read it for planted lines (`pam_permit`, `pam_exec`), then `pam-auth-update --force` | Account Policies |
 | 3 | firewall | ufw on, deny in, allow out, open ports for critical services, logging | Defensive Countermeasures |
 | 4 | ssh | (only if ssh is critical) PermitRootLogin no, no empty passwords, MaxAuthTries 4, X11 off… validated with `sshd -t` | App Security Settings |
 | 5 | sysctl | ASLR 2, SYN cookies, no redirects/source routing, rp_filter, martians, ip_forward 0 | Uncategorized OS Settings |

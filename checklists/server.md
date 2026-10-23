@@ -27,7 +27,7 @@ This file covers the extras. Format: `[ ] what — why — how to check`.
 ## 3. Manual Server items
 - [ ] **Remote Desktop:** many Server READMEs require it → `KEEP_RDP=yes` → the kit keeps it on with **NLA + TLS** (CP19 scored "RDP NLA enabled" **and** "Remote Desktop remains enabled").
 - [ ] **Windows Defender missing?** Server Manager > Add Roles and Features > Features > Microsoft Defender Antivirus (old club review: "Windows Security was missing on Server").
-- [ ] **Shares:** keep README-required shares (`KEEP_SHARES=`), remove the rest. Check NTFS + share permissions on the kept ones (no `Everyone: Full`).
+- [ ] **Shares:** keep README-required shares (`KEEP_SHARES=`), remove the rest. The script never removes admin shares (`C$`, `ADMIN$`) or role shares (`NETLOGON`, `SYSVOL`, `CertEnroll`, `REMINST`, WSUS); it lists them in findings. Check NTFS + share permissions on the kept ones (no `Everyone: Full`).
 - [ ] **IIS** (if critical): remove default/sample sites the README doesn't need, require SSL, turn on logging, turn off anonymous auth where not needed. Reference: CIS IIS 10 benchmark / OWASP IIS hardening.
 - [ ] **FTP** (if critical): no anonymous logon, require SSL, logon attempt restrictions on.
 - [ ] **DNS** (if critical): turn off recursion if it's authoritative-only; logging on.

@@ -44,9 +44,25 @@ Account:
 	required	pam_faillock.so
 EOF
     DEBIAN_FRONTEND=noninteractive pam-auth-update --enable cpkit-faillock --enable cpkit-faillock-notify
+    _faillock_verify   # pam-auth-update exits 0 even when it refuses, so check the result
 }
 
-_pam_remember() { sed -i -E '/pam_unix\.so/{/remember=/!s/(pam_unix\.so.*)$/\1 remember=5/}' /etc/pam.d/common-password; }
+# pam-auth-update refuses (and still exits 0) when common-auth was hand-edited.
+_faillock_verify() {
+    local f="${1:-/etc/pam.d/common-auth}"
+    grep -qE '^[^#]*pam_faillock\.so' "$f" && return 0
+    echo "       pam_faillock was NOT added: $f has hand edits pam-auth-update won't overwrite"
+    cp_finding passwords "pam_faillock NOT enabled: pam-auth-update refused (hand-edited $f). Read the file for planted lines, then run: pam-auth-update --force (see checklists/linux.md, lockout)"
+    return 1
+}
+
+# remember= value on the active pam_unix line ("" when there is none).
+pam_remember_value() {
+    grep -E '^[^#]*pam_unix\.so' "${1:-/etc/pam.d/common-password}" | grep -oE 'remember=[0-9]+' | head -1 | cut -d= -f2
+}
+_pam_remember() {
+    sed -i -E '/^[^#]*pam_unix\.so/{s/remember=[0-9]+/remember=5/;/remember=/!s/(pam_unix\.so.*)$/\1 remember=5/}' "${1:-/etc/pam.d/common-password}"
+}
 _pam_nullok()   { sed -i -E 's/[[:space:]]nullok(_secure)?//g' /etc/pam.d/common-auth /etc/pam.d/common-password; }
 
 mod_passwords() {
@@ -73,8 +89,9 @@ mod_passwords() {
     [ -f /etc/pam.d/common-password ] || { cp_finding passwords "no /etc/pam.d/common-password - not a Debian-family system?"; return 0; }
     cp_backup /etc/pam.d/common-auth; cp_backup /etc/pam.d/common-password; cp_backup /etc/pam.d/common-account
 
-    if grep -q 'pam_unix.so.*remember=' /etc/pam.d/common-password; then echo "  ok   password history (remember=) set"
-    else cp_act passwords "add remember=5 to pam_unix (common-password)" "blocks reusing the last 5 passwords" _pam_remember; fi
+    local rem; rem="$(pam_remember_value)"
+    if [ -n "$rem" ] && [ "$rem" -ge 5 ]; then echo "  ok   password history remember=$rem"
+    else cp_act passwords "set remember=5 on pam_unix (was: ${rem:-none})" "blocks reusing the last 5 passwords" _pam_remember; fi
 
     if grep -qE 'nullok' /etc/pam.d/common-auth /etc/pam.d/common-password; then
         cp_act passwords "remove nullok from PAM" "nullok lets accounts with empty passwords log in" _pam_nullok
@@ -83,7 +100,7 @@ mod_passwords() {
     for k in "deny 5" "unlock_time 1800" "fail_interval 900"; do
         set -- $k; _pw_set /etc/security/faillock.conf "$1" "$2" " = "
     done
-    if grep -q pam_faillock.so /etc/pam.d/common-auth; then echo "  ok   pam_faillock already in common-auth"
+    if grep -qE '^[^#]*pam_faillock\.so' /etc/pam.d/common-auth; then echo "  ok   pam_faillock already in common-auth"
     elif command -v pam-auth-update >/dev/null; then
         cp_act passwords "enable pam_faillock via pam-auth-update" "locks accounts after 5 failed logins" _faillock_profiles
     else cp_finding passwords "pam-auth-update missing - add pam_faillock by hand"; fi

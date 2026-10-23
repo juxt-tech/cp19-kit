@@ -75,6 +75,35 @@ function Test-CpProtectedService {
     return $false
 }
 
+# README nicknames -> real service names (people type "FTP", Windows calls it FTPSVC).
+$script:CpServiceAliases = @{
+    'rdp' = @('TermService','SessionEnv','UmRdpService'); 'remotedesktop' = @('TermService','SessionEnv','UmRdpService')
+    'ftp' = @('FTPSVC'); 'iis' = @('W3SVC','WAS'); 'http' = @('W3SVC','WAS'); 'web' = @('W3SVC','WAS')
+    'smb' = @('LanmanServer'); 'fileshare' = @('LanmanServer'); 'filesharing' = @('LanmanServer'); 'server' = @('LanmanServer')
+    'ssh' = @('sshd'); 'openssh' = @('sshd'); 'print' = @('Spooler'); 'printing' = @('Spooler')
+    'telnet' = @('TlntSvr'); 'snmp' = @('SNMP'); 'winrm' = @('WinRM'); 'dhcp' = @('DHCPServer')
+}
+
+# Pure. Turns README critical entries into real service names BEFORE anything is disabled.
+# Order: exact service name, nickname, exact display name, then a display-name match only if it is unique.
+function Resolve-CpCriticalServices {
+    param([Parameter(Mandatory)]$Services, [string[]]$Critical)
+    $names = New-Object System.Collections.Generic.List[string]; $missing = @(); $map = @()
+    foreach ($c in @($Critical)) {
+        if (-not $c) { continue }
+        $hit = @($Services | Where-Object { $_.Name -ieq $c } | ForEach-Object Name)
+        if (-not $hit) { $hit = @($script:CpServiceAliases[$c.ToLower()]) | Where-Object { $_ } }
+        if (-not $hit) { $hit = @($Services | Where-Object { $_.DisplayName -ieq $c } | ForEach-Object Name) }
+        if (-not $hit) {
+            $like = @($Services | Where-Object { $_.DisplayName -like "*$c*" -or $_.Name -like "*$c*" } | ForEach-Object Name)
+            if ($like.Count -eq 1) { $hit = $like }
+        }
+        if ($hit) { foreach ($h in $hit) { if (-not $names.Contains($h)) { $names.Add($h) } }; $map += "$c -> $($hit -join ' ')" }
+        else { $missing += $c }
+    }
+    [pscustomobject]@{ Names = $names.ToArray(); Missing = $missing; Map = $map; NeedsRdp = $names.Contains('TermService') }
+}
+
 function Write-CpLog {
     param([string]$Module, [string]$Action, [string]$Before, [string]$After, [string]$Why)
     if (-not $script:CpRun) { return }

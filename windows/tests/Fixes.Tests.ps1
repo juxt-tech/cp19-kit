@@ -72,3 +72,62 @@ Describe 'Re-graded: auditpol backup argument is one token' {
         Get-CpAuditpolBackupArg -Path 'C:\a b\x.csv' | Should Be '/file:C:\a b\x.csv'
     }
 }
+
+Describe 'Backlog: README critical names resolved BEFORE the disable step' {
+    $svcs = @(
+        [pscustomobject]@{ Name='FTPSVC';      DisplayName='Microsoft FTP Service' },
+        [pscustomobject]@{ Name='W3SVC';       DisplayName='World Wide Web Publishing Service' },
+        [pscustomobject]@{ Name='TermService'; DisplayName='Remote Desktop Services' },
+        [pscustomobject]@{ Name='MySQL80';     DisplayName='MySQL80' },
+        [pscustomobject]@{ Name='Spooler';     DisplayName='Print Spooler' }
+    )
+    It 'exact service name is kept as-is' {
+        (Resolve-CpCriticalServices -Services $svcs -Critical @('w3svc')).Names -join ',' | Should Be 'W3SVC'
+    }
+    It 'common nickname maps to the service name (FTP -> FTPSVC)' {
+        (Resolve-CpCriticalServices -Services $svcs -Critical @('FTP')).Names -join ',' | Should Be 'FTPSVC'
+    }
+    It 'RDP nickname keeps all three RDP services' {
+        $r = Resolve-CpCriticalServices -Services $svcs -Critical @('RDP')
+        ($r.Names | Sort-Object) -join ',' | Should Be 'SessionEnv,TermService,UmRdpService'
+        $r.NeedsRdp | Should Be $true
+    }
+    It 'TermService by name also means RDP is needed' {
+        (Resolve-CpCriticalServices -Services $svcs -Critical @('TermService')).NeedsRdp | Should Be $true
+    }
+    It 'a unique display-name match works (mysql -> MySQL80)' {
+        (Resolve-CpCriticalServices -Services $svcs -Critical @('mysql')).Names -join ',' | Should Be 'MySQL80'
+    }
+    It 'an unknown name is reported as missing, not silently dropped' {
+        $r = Resolve-CpCriticalServices -Services $svcs -Critical @('Bogus')
+        $r.Missing -join ',' | Should Be 'Bogus'
+    }
+    It 'resolved names protect the real service in the plan' {
+        $r = Resolve-CpCriticalServices -Services $svcs -Critical @('FTP')
+        $cfg = [pscustomobject]@{ Critical=$r.Names; KeepRdp=$false }
+        $plan = Get-CpServicePlan -Services @([pscustomobject]@{ Name='FTPSVC'; StartType='Automatic'; Status='Running' }) -Config $cfg
+        @($plan | Where-Object Action -eq 'Disable').Count | Should Be 0
+    }
+}
+
+Describe 'Backlog: shares module skips Special and role shares' {
+    $shares = @(
+        [pscustomobject]@{ Name='ADMIN$';      Special=$true;  Path='C:\Windows' },
+        [pscustomobject]@{ Name='F$';          Special=$true;  Path='F:\' },
+        [pscustomobject]@{ Name='CertEnroll';  Special=$false; Path='C:\Windows\system32\CertSrv\CertEnroll' },
+        [pscustomobject]@{ Name='REMINST';     Special=$false; Path='D:\RemoteInstall' },
+        [pscustomobject]@{ Name='WsusContent'; Special=$false; Path='D:\WSUS\WsusContent' },
+        [pscustomobject]@{ Name='Hidden$';     Special=$false; Path='C:\Hidden' },
+        [pscustomobject]@{ Name='Secret';      Special=$false; Path='C:\Secret' },
+        [pscustomobject]@{ Name='Docs';        Special=$false; Path='C:\Docs' }
+    )
+    $cfg = [pscustomobject]@{ KeepShares=@('Docs') }
+    $plan = Get-CpSharePlan -Shares $shares -Config $cfg
+    $removed = @($plan | Where-Object Action -eq 'Remove' | ForEach-Object Name)
+    It 'removes an unknown share'           { $removed -contains 'Secret' | Should Be $true }
+    It 'removes a non-special hidden share' { $removed -contains 'Hidden$' | Should Be $true }
+    It 'never touches Special admin shares' { @($plan | Where-Object { $_.Name -eq 'ADMIN$' -or $_.Name -eq 'F$' }).Count | Should Be 0 }
+    It 'never removes role shares'          { @($removed | Where-Object { $_ -in 'CertEnroll','REMINST','WsusContent' }).Count | Should Be 0 }
+    It 'reports role shares as KeepRole'    { @($plan | Where-Object Action -eq 'KeepRole').Count | Should Be 3 }
+    It 'keeps README shares'                { @($plan | Where-Object Action -eq 'KeepReadme' | ForEach-Object Name) -join ',' | Should Be 'Docs' }
+}

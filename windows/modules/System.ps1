@@ -143,17 +143,38 @@ function Invoke-CpModDefender {
     }
 }
 
+# Shares a role needs (AD CS, WDS, WSUS, DC) - removing them breaks the role, so report only.
+$script:CpRoleShares = @('NETLOGON','SYSVOL','print$','CertEnroll','REMINST','WSUSTemp','WsusContent','UpdateServicesPackages')
+
+# Pure. Shares = objects with Name, Special, Path.
+function Get-CpSharePlan {
+    param([Parameter(Mandatory)]$Shares, [Parameter(Mandatory)]$Config)
+    $plan = New-Object System.Collections.Generic.List[object]
+    foreach ($s in $Shares) {
+        $n = [string]$s.Name
+        if ($s.Special -or $n -eq 'IPC$') { continue }   # ADMIN$, C$, D$ ... created by Windows itself
+        if (@($Config.KeepShares) -contains $n) { $plan.Add([pscustomobject]@{ Action='KeepReadme'; Name=$n; Path=$s.Path }); continue }
+        if (@($script:CpRoleShares | Where-Object { $_ -ieq $n }).Count) { $plan.Add([pscustomobject]@{ Action='KeepRole'; Name=$n; Path=$s.Path }); continue }
+        $plan.Add([pscustomobject]@{ Action='Remove'; Name=$n; Path=$s.Path })
+    }
+    return ,$plan.ToArray()
+}
+
 function Invoke-CpModShares {
     param($Config)
     Write-CpHeader 'SHARES + SMB'
-    $default = @('ADMIN$','C$','D$','E$','IPC$','print$','NETLOGON','SYSVOL')
-    foreach ($s in Get-SmbShare -ErrorAction SilentlyContinue) {
-        if ($default -contains $s.Name) { continue }
-        if ($Config.KeepShares -contains $s.Name) { Write-CpOk "share $($s.Name) kept (README)"; continue }
-        $acc = (Get-SmbShareAccess -Name $s.Name -ErrorAction SilentlyContinue | ForEach-Object { "$($_.AccountName):$($_.AccessRight)" }) -join ', '
-        Add-CpFinding shares "share '$($s.Name)' -> $($s.Path)  access: $acc  (forensics questions often ask about this - note it first)"
-        $n = $s.Name
-        Invoke-CpAction shares "stop sharing '$n' ($($s.Path))" 'non-default share not in KEEP_SHARES' { Remove-SmbShare -Name $n -Force -ErrorAction Stop }.GetNewClosure()
+    $all = @(Get-SmbShare -ErrorAction SilentlyContinue)
+    foreach ($a in (Get-CpSharePlan -Shares $all -Config $Config)) {
+        $n = $a.Name
+        $acc = (Get-SmbShareAccess -Name $n -ErrorAction SilentlyContinue | ForEach-Object { "$($_.AccountName):$($_.AccessRight)" }) -join ', '
+        switch ($a.Action) {
+            'KeepReadme' { Write-CpOk "share $n kept (README)" }
+            'KeepRole'   { Write-CpOk "share $n kept (server role share)"; Add-CpFinding shares "role share '$n' -> $($a.Path)  access: $acc  (kept; check Everyone has no Full/Change)" }
+            'Remove'     {
+                Add-CpFinding shares "share '$n' -> $($a.Path)  access: $acc  (forensics questions often ask about this - note it first)"
+                Invoke-CpAction shares "stop sharing '$n' ($($a.Path))" 'non-default share not in KEEP_SHARES' { Remove-SmbShare -Name $n -Force -ErrorAction Stop }.GetNewClosure()
+            }
+        }
     }
     $srv = Get-SmbServerConfiguration
     if ($srv.EnableSMB1Protocol) { Invoke-CpAction shares 'disable SMBv1 server' 'SMBv1 = WannaCry/EternalBlue' { Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force -ErrorAction Stop } } else { Write-CpOk 'SMBv1 server off' }

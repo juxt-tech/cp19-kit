@@ -31,6 +31,9 @@ for f in /etc/apt/sources.list.d/*.sources; do
     [ -f "$f" ] && { grep -q '^Enabled:' "$f" && sed -i 's/^Enabled:.*/Enabled: no/' "$f" || sed -i '/^Types:/a Enabled: no' "$f"; }
 done
 
+# weak password history (remember=0 used to count as ok)
+sed -i -E "/^[^#]*pam_unix.so/s/$/ remember=0/" /etc/pam.d/common-password
+
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
 USERS=prancer dasher cupid blitzen

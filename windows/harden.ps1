@@ -35,6 +35,13 @@ if (-not $Config) {
 }
 try { $cfg = Import-CpConfig -Path $(if ($Config) { $Config } else { '.\cp-config.txt' }) } catch { Write-Host $_.Exception.Message -ForegroundColor Red; exit 1 }
 
+# Turn README nicknames (FTP, IIS, RDP...) into real service names BEFORE any module runs,
+# so a wrong name can never let the real service be disabled.
+$crit = Resolve-CpCriticalServices -Services @(Get-Service | Select-Object Name, DisplayName) -Critical $cfg.Critical
+$critTyped = $cfg.Critical
+$cfg.Critical = $crit.Names
+if ($crit.NeedsRdp -and -not $cfg.KeepRdp) { $cfg.KeepRdp = $true; $rdpForced = $true }
+
 $run = Join-Path 'C:\cpkit-runs' (Get-Date -Format 'yyyyMMdd-HHmmss')
 if (Test-Path $run) { $run = "$run-$PID" }
 Set-CpContext -RunDir $run -Apply:$Apply -Yes:$Yes
@@ -62,7 +69,13 @@ Write-Host (" CyberPatriot Windows kit   mode: {0}   {1}{2}" -f $(if ($Apply) {'
 Write-Host " config : $Config"
 Write-Host " admins : $($cfg.Admins -join ' ')"
 Write-Host " users  : $($cfg.Users -join ' ')"
-Write-Host " critical services: $($cfg.Critical -join ' ')   KEEP_RDP: $($cfg.KeepRdp)   KEEP_SHARES: $($cfg.KeepShares -join ' ')"
+Write-Host " critical services: $($critTyped -join ' ')   KEEP_RDP: $($cfg.KeepRdp)   KEEP_SHARES: $($cfg.KeepShares -join ' ')"
+foreach ($m in $crit.Map) { Write-Host "   protected: $m" }
+foreach ($m in $crit.Missing) {
+    Write-Host "   WARNING: critical service '$m' not found - use the service NAME (TermService, W3SVC, FTPSVC, LanmanServer). Fix cp-config.txt before -Apply." -ForegroundColor Yellow
+    Add-CpFinding services "critical service '$m' from cp-config.txt not found on this machine - nothing protects it"
+}
+if ($rdpForced) { Write-Host '   NOTE: Remote Desktop is a critical service, so KEEP_RDP was treated as yes.' -ForegroundColor Yellow }
 Write-Host " running as: $env:USERNAME   run dir: $run"
 Write-Host '================================================================'
 if ($Apply -and -not $Yes) {

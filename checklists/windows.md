@@ -10,7 +10,7 @@ Scored categories (official): User Auditing · Account Policies · Local Policie
 - [ ] Read the **README twice**. Write down: authorized admins, authorized users, critical services, required software, anything "must stay". — Removing a README thing **loses** points.
 - [ ] Note your own username (top of the README or `whoami`). — The kit never touches it, but you shouldn't either.
 - [ ] Copy `config\cp-config.example.txt` to `cp-config.txt` and fill it in from the README. — The script reads it to protect README items.
-  - Critical services need the **service name**, not the display name: Remote Desktop = `TermService`, IIS = `W3SVC`, FTP = `FTPSVC`, SMB = `LanmanServer`, DNS = `DNS`.
+  - Critical services: use the **service name** (Remote Desktop = `TermService`, IIS = `W3SVC`, FTP = `FTPSVC`, SMB = `LanmanServer`, DNS = `DNS`). Nicknames `RDP FTP IIS SMB SSH print` also work. The script's banner prints `protected: X -> Y` for each one; a yellow **WARNING not found** means fix the config before `-Apply`.
   - README wants RDP? `KEEP_RDP=yes`. README names shares? `KEEP_SHARES=name1 name2`.
 - [ ] Open the scoring report shortcut on the desktop. Keep it open; refresh after each section.
 
