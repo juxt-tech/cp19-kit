@@ -99,6 +99,12 @@ function Get-CpDefenderPolicyValues {
     return $h
 }
 
+# Pure: update + scan only when needed, so a second apply makes 0 changes.
+function Test-CpDefenderStale {
+    param([long]$SignatureAgeDays, [long]$QuickScanAgeDays)
+    return ($SignatureAgeDays -ge 1 -or $QuickScanAgeDays -ge 1)
+}
+
 function Invoke-CpModDefender {
     param($Config)
     Write-CpHeader 'WINDOWS DEFENDER'
@@ -128,8 +134,13 @@ function Invoke-CpModDefender {
             Invoke-CpAction defender "remove Defender $type '$val'" 'exclusions let malware hide (CP19 scored .exe exclusion)' { $h = @{ $type = $val }; Remove-MpPreference @h -ErrorAction Stop }.GetNewClosure()
         }
     }
-    Invoke-CpAction defender 'update Defender signatures + start a quick scan in the background' 'fresh signatures find planted malware' {
-        Update-MpSignature -ErrorAction SilentlyContinue; Start-MpScan -ScanType QuickScan -AsJob | Out-Null }
+    $st = Get-MpComputerStatus -ErrorAction SilentlyContinue
+    if ($st -and -not (Test-CpDefenderStale -SignatureAgeDays $st.AntivirusSignatureAge -QuickScanAgeDays $st.QuickScanAge)) {
+        Write-CpOk 'signatures current and quick scan within a day'
+    } else {
+        Invoke-CpAction defender 'update Defender signatures + start a quick scan in the background' 'fresh signatures find planted malware' {
+            Update-MpSignature -ErrorAction SilentlyContinue; Start-MpScan -ScanType QuickScan -AsJob | Out-Null }
+    }
 }
 
 function Invoke-CpModShares {
@@ -190,7 +201,7 @@ function Invoke-CpModUpdates {
         $x = (Get-ItemProperty $wu -ErrorAction SilentlyContinue).$v
         if ($x) { Add-CpFinding updates "WindowsUpdate policy '$v' = $x (blocks updates - remove it)" }
     }
-    Invoke-CpAction updates 'open Settings > Windows Update (click Check for updates; let it run in background)' 'OS updates are scored' { Start-Process 'ms-settings:windowsupdate' }
+    Add-CpFinding updates 'Windows Update: Settings > Windows Update > Check for updates, let it install in the background (OS updates are scored)'
     foreach ($app in 'Mozilla Firefox','Google Chrome','Notepad++','Microsoft Edge','7-Zip','VLC','Adobe') {
         Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "$app*" } | ForEach-Object { Add-CpFinding updates "update by hand: $($_.DisplayName) $($_.DisplayVersion)  (CP scores app updates)" }

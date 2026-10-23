@@ -60,10 +60,17 @@ cp_load_config() {
     fi
     while IFS= read -r line || [ -n "$line" ]; do
         line="${line%$'\r'}"                      # tolerate Windows line endings
-        line="${line%%#*}"                        # strip comments
+        line="${line#$'\xef\xbb\xbf'}"            # tolerate a UTF-8 BOM (Notepad)
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue   # whole-line comments only
         [[ "$line" == *=* ]] || continue
         key="$(echo "${line%%=*}" | tr -d '[:space:]')"
-        val="$(echo "${line#*=}" | xargs)"        # trim + collapse spaces
+        val="${line#*=}"
+        if [ "$key" = NEW_PASSWORD ]; then
+            # passwords may contain # ' and spaces: keep exactly, trim only the ends
+            val="$(printf '%s' "$val" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+        else
+            val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//' | awk '{$1=$1; print}')"
+        fi
         case "$key" in
             ADMINS) CP_ADMINS="$val" ;;
             USERS) CP_USERS="$val" ;;

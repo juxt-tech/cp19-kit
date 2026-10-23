@@ -8,9 +8,9 @@ When the list is empty, the loop runs a discovery pass (shellcheck, PSScriptAnal
 - [x] Linux updates: Debian 12 uses deb822 `/etc/apt/sources.list.d/debian.sources` and Mint uses `official-package-repositories.list`. Commented/disabled sources there aren't fixed or flagged. **Done:** *.list + deb822 handled; only official mirrors re-enabled (unit 80/80, matrix 32/32 x3).
 - [x] Linux ordering: passwords/firewall install packages (libpam-pwquality, ufw) BEFORE the updates module re-enables disabled sources, so those installs fail on an image with broken sources. **Done:** new `sources` module (2nd in order) re-enables + apt-get update; matrix plants broken sources (RED: no ufw/pwquality → GREEN 34/34 x3). Also added a CRLF guard test.
 - [x] Windows: non-terminating errors and native exit codes are logged as `ACTION done`. **Done:** Invoke-CpAction captures error records + checks LASTEXITCODE (Pester 67/67).
-- [ ] Config parsing (both OSes): a `#` inside NEW_PASSWORD truncates it; an apostrophe breaks `xargs` (Linux); a UTF-8 BOM breaks the first key.
+- [x] Config parsing (both OSes): a `#` inside NEW_PASSWORD truncates it; an apostrophe breaks `xargs` (Linux); a UTF-8 BOM breaks the first key. **Done:** whole-line comments only; password kept verbatim; BOM stripped (unit 85/85, Pester 70/70).
 - [ ] Linux passwords: a `pam-auth-update` refusal (local modifications) is still logged as done; `remember=0` counts as ok.
-- [ ] Windows: the Updates/Defender-signature steps always log ACTION, so a second apply never shows 0 changes. Only act when something is actually stale.
+- [x] Windows: the Updates/Defender-signature steps always log ACTION, so a second apply never shows 0 changes. **Done:** Defender update/scan only when ≥1 day stale; Windows Update → findings reminder (Pester 73/73).
 - [ ] Windows shares: skip `Special` shares and role shares (CertEnroll, REMINST, WSUS*, `*$` admin shares).
 - [ ] Linux media: exclude the kit's own run dir (`/root/cpkit-runs`) from the media/archive report.
 - [ ] Windows: check README-critical service names exist BEFORE the disable step (Linux already does).

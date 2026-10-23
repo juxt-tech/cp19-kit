@@ -50,6 +50,23 @@ Describe 'Backlog: quiet failures are logged as FAILED, not done' {
     Remove-Item $run -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+Describe 'Backlog: config tricky values' {
+    $t = Join-Path $env:TEMP 'cpkit-tricky.txt'
+    $body = "ADMINS=santa  prancer`r`n# comment`r`nUSERS=dasher`r`nNEW_PASSWORD=Ab#12'xy Z!`r`nCRITICAL_SERVICES=TermService   # README says RDP`r`n"
+    [IO.File]::WriteAllText($t, $body, (New-Object Text.UTF8Encoding $true))   # with BOM, like Notepad
+    $cfg = Import-CpConfig -Path $t
+    It 'BOM does not break the first key'  { ($cfg.Admins -join ',') | Should Be 'santa,prancer' }
+    It 'keeps # and apostrophe in password' { $cfg.NewPassword | Should Be "Ab#12'xy Z!" }
+    It 'strips inline comment from lists'   { ($cfg.Critical -join ',') | Should Be 'TermService' }
+    Remove-Item $t
+}
+
+Describe 'Backlog: Defender update/scan only when stale (idempotent re-runs)' {
+    It 'fresh signatures + recent scan -> nothing to do' { Test-CpDefenderStale -SignatureAgeDays 0 -QuickScanAgeDays 0 | Should Be $false }
+    It 'old signatures -> stale'                         { Test-CpDefenderStale -SignatureAgeDays 2 -QuickScanAgeDays 0 | Should Be $true }
+    It 'never scanned -> stale'                          { Test-CpDefenderStale -SignatureAgeDays 0 -QuickScanAgeDays 4294967295 | Should Be $true }
+}
+
 Describe 'Re-graded: auditpol backup argument is one token' {
     It 'builds /file:<path> as a single argument' {
         Get-CpAuditpolBackupArg -Path 'C:\a b\x.csv' | Should Be '/file:C:\a b\x.csv'

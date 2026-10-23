@@ -50,7 +50,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 | 8 | Remote | RDP off (or ON + NLA + TLS if `KEEP_RDP=yes`); Remote Assistance off | Uncategorized OS Settings |
 | 9 | Shares | removes non-default shares (lists access first); SMBv1 off; SMB signing | Uncategorized OS Settings |
 | 10 | Features | Telnet client, TFTP, SMB1, PowerShell v2 off | Uncategorized OS Settings |
-| 11 | Updates | auto-update policy; opens Windows Update; lists apps to update | OS + App Updates |
+| 11 | Updates | auto-update policy; reminds you (findings) to run Windows Update; lists apps to update | OS + App Updates |
 | 12 | Software / Persistence / Media | **reports only** → `findings.txt` | Unwanted Software / Malware / Prohibited Files |
 
 ## 4. Work through findings.txt by hand

@@ -37,10 +37,13 @@ function Import-CpConfig {
     if (-not (Test-Path $Path)) { throw "Config not found: $Path  (copy config\cp-config.example.txt to cp-config.txt and fill it from the README)" }
     $h = @{}
     foreach ($line in Get-Content $Path) {
-        $l = ($line -replace '#.*$','').Trim()
-        if ($l -notmatch '=') { continue }
+        $l = $line.TrimStart([char]0xFEFF).Trim()
+        if ($l -match '^#' -or $l -notmatch '=') { continue }    # whole-line comments only
         $k, $v = $l -split '=', 2
-        $h[$k.Trim().ToUpper()] = $v.Trim()
+        $k = $k.Trim().ToUpper()
+        # passwords may contain '#': keep exactly; other values may carry a trailing ' # note'
+        if ($k -ne 'NEW_PASSWORD') { $v = $v -replace '\s+#.*$', '' }
+        $h[$k] = $v.Trim()
     }
     $known = 'ADMINS','USERS','CRITICAL_SERVICES','ALLOWED_SOFTWARE','NEW_PASSWORD','KEEP_RDP','KEEP_SHARES'
     foreach ($k in $h.Keys) { if ($known -notcontains $k) { Write-Host "  (config: unknown key '$k' ignored)" -ForegroundColor Yellow } }
