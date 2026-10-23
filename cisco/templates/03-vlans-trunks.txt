@@ -19,7 +19,7 @@ configure terminal
 !
 ! --- Trunk (switch-to-switch / switch-to-router) ---
  interface g0/1
-  ! ONLY on 3560/3650 L3 switches; 2960 rejects it (that's fine)
+  ! needed on 3560 L3 switches; 2960 (and some 3650 images) reject it as invalid input - that's fine, keep going
   switchport trunk encapsulation dot1q
   switchport mode trunk
   ! ONE line, comma list. Three separate lines overwrite each other!

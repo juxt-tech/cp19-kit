@@ -59,7 +59,8 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 
 ## 5. Manual-only items
 - [ ] **Critical service configs** the README cares about. These are worth a lot and are image-specific:
-  - vsftpd (`/etc/vsftpd.conf`): `anonymous_enable=NO`, `local_enable=YES`, `ssl_enable=YES`, `chroot_local_user=YES`. `/etc/ftpusers` is a **DENY list**: system accounts (root, daemon…) belong there; README users who need FTP must NOT be in it, and unauthorized FTP users should be (old club review).
+  - **After every edit:** `sudo systemctl restart <svc> && systemctl is-active <svc>`. If it's not `active`, read `journalctl -u <svc> -n 20` and undo that one line. A critical service that won't start loses more points than the setting earns.
+  - vsftpd (`/etc/vsftpd.conf`): `anonymous_enable=NO`, `local_enable=YES`, `ssl_enable=YES` (needs `rsa_cert_file` to exist, e.g. `/etc/ssl/certs/ssl-cert-snakeoil.pem`; check the restart), `chroot_local_user=YES` (vsftpd refuses a writable chroot: if login breaks, add `allow_writeable_chroot=YES`). `/etc/ftpusers` is a **DENY list**: system accounts (root, daemon…) belong there; README users who need FTP must NOT be in it, and unauthorized FTP users should be (old club review).
   - apache2: `ServerTokens Prod`, `ServerSignature Off`, `Options -Indexes`, TraceEnable Off.
   - nginx: `server_tokens off;`, check `root` points where the README says, watch `alias` off-by-slash.
   - samba: `guest ok = no`, `map to guest = never`, `smb encrypt = required`, `min protocol = SMB2`.
