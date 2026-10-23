@@ -43,6 +43,7 @@ t "media listed in findings"              grep -q "song.mp3" "$RUN/findings.txt"
 t "cron backdoor listed in findings"      grep -q "nc -e /bin/bash" "$RUN/findings.txt"
 t "backups taken"                         test -f "$RUN/backup/etc/ssh/sshd_config"
 t "log written"                           grep -q " | ACTION | " "$RUN/log.txt"
+f "media report skips the kit run dir"     grep -q "media.*cpkit-runs" "$RUN/findings.txt"
 
 echo "== verify: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

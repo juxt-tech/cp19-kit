@@ -80,7 +80,6 @@ function Invoke-CpModPersistence {
         $a = ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
         Add-CpFinding persistence "scheduled task $($_.TaskPath)$($_.TaskName) [$($_.Author)]: $a"
     }
-    $wl = 'Userinit','Shell'
     $w = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -ErrorAction SilentlyContinue
     if ($w.Userinit -notmatch '^C:\\Windows\\system32\\userinit\.exe,?$') { Add-CpFinding persistence "Winlogon Userinit tampered: $($w.Userinit)" }
     if ($w.Shell -ne 'explorer.exe') { Add-CpFinding persistence "Winlogon Shell tampered: $($w.Shell)" }

@@ -13,11 +13,11 @@ When the list is empty, the loop runs a discovery pass (shellcheck, PSScriptAnal
 - [x] Linux passwords: a `pam-auth-update` refusal (local modifications) is still logged as done; `remember=0` counts as ok. **Done:** refusal reproduced in Ubuntu 22.04 (exit 0, no faillock); now verified after the call -> FAILED + finding; remember < 5 raised to 5 (unit 93/93, matrix plants remember=0).
 - [x] Windows: the Updates/Defender-signature steps always log ACTION, so a second apply never shows 0 changes. **Done:** Defender update/scan only when ≥1 day stale; Windows Update → findings reminder (Pester 73/73).
 - [x] Windows shares: skip `Special` shares and role shares (CertEnroll, REMINST, WSUS*, `*$` admin shares). **Done:** `Get-CpSharePlan`; role shares kept + listed in findings; a non-special `Hidden$` share is still removed (Pester 86/86).
-- [ ] Linux media: exclude the kit's own run dir (`/root/cpkit-runs`) from the media/archive report.
-- [ ] server.md: "AD-DS installed" doesn't mean it's a DC; say "ProductType 2 / Server Manager shows AD DS as a role and the box is promoted".
+- [x] Linux media: exclude the kit's own run dir (`/root/cpkit-runs`) from the media/archive report. **Done:** `media_not_kit` drops run dirs + the kit download (only when named cp19-kit*), unit 95/95.
+- [x] server.md: "AD-DS installed" doesn't mean it's a DC; say "ProductType 2 / Server Manager shows AD DS as a role and the box is promoted". **Done:** ProductType 2 test (same as the kit) + promoted check.
 
 ## Test coverage
-- [ ] Linux services module under real systemd: run the scenario in a systemd-enabled container (cups/avahi/vsftpd units, socket activation).
-- [ ] shellcheck every `.sh` (docker `koalaman/shellcheck`); fix real warnings.
-- [ ] PSScriptAnalyzer every `.ps1`/`.psm1`; fix real warnings.
+- [x] Linux services module under real systemd: run the scenario in a systemd-enabled container (cups/avahi/vsftpd units, socket activation). **Done:** `linux/tests/systemd-test.sh` (systemd PID 1): cups/avahi service+socket+path disabled and stopped, README `ftp` keeps vsftpd, second run 0 changes (15/15).
+- [x] shellcheck every `.sh` (docker `koalaman/shellcheck`); fix real warnings. **Done:** clean at warning level; `.shellcheckrc` documents the cross-file false positives; fixed `ls | grep` in persistence. Found + fixed a real bug: creating a README user ran `sh -c "... echo '$u:$PASS'"`, so a `'` in NEW_PASSWORD broke it (and was shell injection) -> `_add_user` with printf (unit test).
+- [x] PSScriptAnalyzer every `.ps1`/`.psm1`; fix real warnings. **Done (in a pwsh container, host untouched):** errors are by design (plaintext config password -> SecureString); fixed dead `$wl` and a null comparison. Rest = style (Write-Host is the UI).
 - [ ] Windows end-to-end: audit, then apply, on a Win11 / Server 2022 practice VM. **Needs Sanh** (VM + snapshot); the loop skips it and leaves it here.

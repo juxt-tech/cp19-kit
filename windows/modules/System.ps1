@@ -71,7 +71,7 @@ function Invoke-CpModFirewall {
                 -NotifyOnListen True -AllowUnicastResponseToMulticast False -LogBlocked True -LogAllowed False -ErrorAction Stop }.GetNewClosure()
     }
     Get-NetFirewallRule -Direction Inbound -Action Allow -Enabled True -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayGroup -eq $null -or $_.DisplayGroup -eq '' } |
+        Where-Object { -not $_.DisplayGroup } |
         ForEach-Object { Add-CpFinding firewall "custom inbound ALLOW rule: '$($_.DisplayName)'  (needed by README?)" }
 }
 

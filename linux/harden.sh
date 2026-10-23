@@ -9,6 +9,7 @@
 # and take a VMware snapshot. Run one module at a time and snapshot between them.
 
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CP_KIT_ROOT="$(dirname "$KIT")"   # media report skips the kit's own download
 # shellcheck source=lib/common.sh
 source "$KIT/lib/common.sh"
 for m in "$KIT"/modules/*.sh; do source "$m"; done

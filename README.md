@@ -47,7 +47,8 @@ Run folder: `/root/cpkit-runs/<time>/`
 - Windows policy: `backup\secpol-before.inf` → `secedit /configure /db x.sdb /cfg secpol-before.inf`; audit policy: `auditpol /restore /file:backup\auditpol.csv`; registry: double-click the `.reg` in `backup\registry`.
 
 ## Tests
-- Linux: `bash linux/tests/run-tests.sh` builds a vulnerable Mint 21, Debian 12 and Ubuntu 22.04 container. It checks that audit changes nothing, that apply fixes every planted vuln (32 checks), that README users/services survive, and that a second run changes nothing.
+- Linux: `bash linux/tests/run-tests.sh` builds a vulnerable Mint 21, Debian 12 and Ubuntu 22.04 container. It checks that audit changes nothing, that apply fixes every planted vuln (36 checks), that README users/services survive, and that a second run changes nothing.
+- Linux services under a real systemd: `bash linux/tests/systemd-test.sh` (service + socket + path units disabled, README services kept).
 - Windows: `Invoke-Pester .\windows\tests` (Pester 3.4, built into Windows) runs 86 unit tests of the decision logic.
 
 ## Credits (ideas only, no code copied)

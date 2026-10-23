@@ -15,8 +15,10 @@ mod_persistence() {
         [ -f "$f" ] || continue
         grep -EHn "$CP_SUSPICIOUS_RE" "$f" 2>/dev/null | while read -r l; do cp_finding persistence "SUSPICIOUS cron: $l"; done
     done
-    ls /etc/cron.d 2>/dev/null | grep -Ev '^(e2scrub_all|php|popularity-contest|anacron|sysstat|\.placeholder)$' | while read -r f; do
-        cp_finding persistence "non-default /etc/cron.d entry: $f"
+    for f in /etc/cron.d/*; do
+        [ -e "$f" ] || continue
+        case "${f##*/}" in e2scrub_all|php|popularity-contest|anacron|sysstat|.placeholder) continue ;; esac
+        cp_finding persistence "non-default /etc/cron.d entry: ${f##*/}"
     done
     command -v systemctl >/dev/null && systemctl list-timers --all --no-legend 2>/dev/null | awk '{print $(NF-1)}' | \
         grep -Ev '^(apt-daily|apt-daily-upgrade|dpkg-db-backup|e2scrub_all|fstrim|logrotate|man-db|motd-news|systemd-tmpfiles-clean|anacron|fwupd-refresh|ua-timer|update-notifier-.*|phpsessionclean|snapd.*|sysstat-.*)\.timer$' | \

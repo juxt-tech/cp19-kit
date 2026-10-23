@@ -4,7 +4,7 @@
 This file covers the extras. Format: `[ ] what — why — how to check`.
 
 ## 0. Is it a domain controller?
-- [ ] `Get-WindowsFeature AD-Domain-Services` shows Installed, **or** Server Manager shows "AD DS" → it's a **DC**.
+- [ ] `(Get-CimInstance Win32_OperatingSystem).ProductType` is **2** → it's a **DC** (the kit uses the same test and prints "(domain controller)" in its banner). The AD DS role being *installed* is not enough: the server must also be *promoted* (Server Manager shows no "Promote this server" flag, and `dsa.msc` opens a domain).
   - On a DC, accounts live in **Active Directory** (`dsa.msc`), not Local Users. The kit's Users/AccountPolicy modules step aside and the **Server** module does AD users + the domain password policy.
   - `krbtgt` is a system account: never touch it.
 

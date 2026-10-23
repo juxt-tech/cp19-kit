@@ -42,7 +42,8 @@ _users_state() {
     EMPTYPW="$(awk -F: '$2=="" {print $1}' /etc/shadow | xargs)"
 }
 
-_set_pass() { echo "$1:$CP_NEWPASS" | chpasswd; }
+_set_pass() { printf '%s:%s\n' "$1" "$CP_NEWPASS" | chpasswd; }   # printf: password passed untouched
+_add_user() { useradd -m -s /bin/bash "$1" && _set_pass "$1"; }
 
 # Give a UID-0 README user a normal UID/GID. usermod refuses (UID 0 always "in use"), so edit passwd.
 _fix_uid0() {
@@ -59,7 +60,7 @@ _fix_uid0() {
 
 mod_users() {
     cp_header "USERS  (README authorized admins/users)"
-    local plan line act u
+    local plan act u
     _users_state
     echo "  admins in config : $CP_ADMINS"
     echo "  users in config  : $CP_USERS"
@@ -71,7 +72,7 @@ mod_users() {
             REMOVE_USER) cp_act users "delete user $u (home kept)" "not in README" userdel "$u" ;;
             ADD_USER)
                 if [ -z "$CP_NEWPASS" ]; then cp_finding users "README user $u missing but NEW_PASSWORD empty - create by hand"; continue; fi
-                cp_act users "create user $u" "listed in README but missing" sh -c "useradd -m -s /bin/bash '$u' && echo '$u:$CP_NEWPASS' | chpasswd" ;;
+                cp_act users "create user $u" "listed in README but missing" _add_user "$u" ;;
             DEL_SUDO)    cp_act users "remove $u from sudo" "not an authorized admin" gpasswd -d "$u" sudo ;;
             ADD_SUDO)    cp_act users "add $u to sudo" "authorized admin" gpasswd -a "$u" sudo ;;
             DEL_UID0)    cp_backup /etc/passwd; cp_backup /etc/shadow
