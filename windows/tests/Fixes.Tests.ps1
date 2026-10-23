@@ -131,3 +131,42 @@ Describe 'Backlog: shares module skips Special and role shares' {
     It 'reports role shares as KeepRole'    { @($plan | Where-Object Action -eq 'KeepRole').Count | Should Be 3 }
     It 'keeps README shares'                { @($plan | Where-Object Action -eq 'KeepReadme' | ForEach-Object Name) -join ',' | Should Be 'Docs' }
 }
+
+Describe 'User Rights Assignment report (idea from ponkio/CyberPatriot checklist)' {
+    $inf = @"
+[Unicode]
+Unicode=yes
+[Privilege Rights]
+SeDebugPrivilege = *S-1-5-32-544,hacker
+SeTakeOwnershipPrivilege = *S-1-1-0,*S-1-5-32-544
+SeBackupPrivilege = *S-1-5-32-544,*S-1-5-32-551
+SeNetworkLogonRight = *S-1-1-0,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-551
+SeInteractiveLogonRight = Guest,*S-1-5-32-544,*S-1-5-32-545
+SeServiceLogonRight = *S-1-5-80-0
+SeImpersonatePrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-6
+SeLoadDriverPrivilege = *S-1-5-21-111-222-333-1005
+[Version]
+signature="`$CHICAGO`$"
+"@
+    $f = @(Get-CpUserRightsFindings -InfText $inf)
+    $all = $f -join "`n"
+    It 'flags a named user with Debug programs'           { $all | Should Match "Debug programs.*hacker" }
+    It 'flags Everyone with Take ownership'               { $all | Should Match "Take ownership.*Everyone" }
+    It 'flags an account SID with Load drivers'           { $all | Should Match "Load and unload device drivers.*S-1-5-21-111-222-333-1005" }
+    It 'flags Guest allowed to log on locally'            { $all | Should Match "Allow log on locally.*Guest" }
+    It 'flags missing Guest deny on network logon'        { $all | Should Match "Deny access to this computer from the network" }
+    It 'Backup Operators on Back up files is default'     { $all | Should Not Match "Back up files" }
+    It 'Everyone on network logon is a Windows default'   { $all | Should Not Match "Access this computer from the network.*Everyone" }
+    It 'service SIDs on Impersonate are default'          { $all | Should Not Match "Impersonate" }
+    It 'Administrators never flagged'                     { $all | Should Not Match "S-1-5-32-544|Administrators" }
+    It 'Guest denied network logon -> no deny finding' {
+        $ok = $inf -replace '\[Version\]', "SeDenyNetworkLogonRight = Guest`r`n[Version]"
+        (@(Get-CpUserRightsFindings -InfText $ok) -join "`n") | Should Not Match "Deny access"
+    }
+}
+
+Describe 'Extra security options (idea from ponkio/CyberPatriot checklist)' {
+    It 'locks idle sessions after 900 s'           { $script:CpSecurityOptions['MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\InactivityTimeoutSecs'] | Should Be '4,900' }
+    It 'no shutdown from the logon screen'         { $script:CpSecurityOptions['MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ShutdownWithoutLogon'] | Should Be '4,0' }
+    It 'no LocalSystem NULL session fallback'      { $script:CpSecurityOptions['MACHINE\System\CurrentControlSet\Control\Lsa\MSV1_0\allownullsessionfallback'] | Should Be '4,0' }
+}

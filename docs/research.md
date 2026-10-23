@@ -35,6 +35,7 @@ Scored checks: unauthorized users/admins removed; insecure password changed; min
 | frxyoz/windowssecurer | Windows | none | Defender, audit policy, RDP, features. |
 | jxv133-sys/server2022-checker | Server 2022 | none | **read-only self-check** idea; capture forensics evidence first; secedit-export parsing. |
 | DavidBootle/Server2016Scripts | Server | none | server features/roles. |
+| ponkio/CyberPatriot (2016-17, Ubuntu + Win10, reviewed 2026-10-22) | Linux + Windows | none | Checklist ideas only: **User Rights Assignment** table (→ report-only `userrights` findings + safe table in windows.md), idle lock 900 s, no shutdown from logon screen, no NULL-session fallback, Guests group = Guest only; Linux duplicate-UID check, gdm3 `AutomaticLoginEnable`, Ctrl-Alt-Del mask, per-user crontabs, PHP/MySQL hardening lines. **Rejected:** `anonymous_enable=ON` for vsftpd (wrong), *Log on as a service = No one* (breaks services), *shut down if unable to log audits* (crash risk), disabling IPv6/NetBIOS by default, installing CCleaner/IObit (CP flags them), its older password values (ours come from a scored CP19 key). |
 
 ### Patterns to avoid (seen in repos)
 - Blanket password reset for every user, including the competitor's own account → lockout. We only set passwords for listed users and never touch the current user.

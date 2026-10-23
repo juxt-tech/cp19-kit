@@ -65,6 +65,8 @@ mod_services() {
             DISABLE) cp_act services "stop + disable $s (and its socket/path units)" "risky service not required by README" _svc_disable "$s" ;;
         esac
     done <<< "$plan"
+    if [ "$(systemctl is-enabled ctrl-alt-del.target 2>/dev/null)" = masked ]; then echo "  ok   Ctrl-Alt-Del reboot disabled"
+    else cp_act services "mask ctrl-alt-del.target" "anyone at the console could reboot the box with Ctrl-Alt-Del" systemctl mask ctrl-alt-del.target; fi
     command -v ss >/dev/null && ss -tulpnH 2>/dev/null | awk '{print $1, $5, $7}' | while read -r l; do
         cp_finding services "listening: $l"
     done

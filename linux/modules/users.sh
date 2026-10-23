@@ -98,11 +98,28 @@ mod_users() {
     awk -F: '$3<1000 && $3!=0 && $7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1" "$7}' /etc/passwd | while read -r n sh; do
         cp_finding users "system account $n has a login shell ($sh)"
     done
+    dup_uids /etc/passwd | while read -r id names; do
+        cp_finding users "UID $id is shared by: $names  (a hidden twin of a real account - remove the extra one)"
+    done
     _users_guest_login
+}
+
+# Pure. "UID name name..." for every UID used by more than one account.
+dup_uids() {
+    awk -F: '{ n[$3] = n[$3] " " $1; c[$3]++ } END { for (u in c) if (c[u] > 1) print u n[u] }' "$1" | sort -n
+}
+
+# Pure. True when a gdm3 config turns automatic login on.
+gdm_autologin_on() {
+    grep -qiE '^[[:space:]]*AutomaticLoginEnable[[:space:]]*=[[:space:]]*true' "$1" 2>/dev/null
 }
 
 # LightDM (Mint) guest + autologin.
 _users_guest_login() {
+    local g
+    for g in /etc/gdm3/custom.conf /etc/gdm3/daemon.conf; do   # GNOME (Ubuntu/Debian)
+        gdm_autologin_on "$g" && cp_finding users "gdm3 automatic login is on in $g  (set AutomaticLoginEnable=false unless README needs it)"
+    done
     [ -d /etc/lightdm ] || return 0
     local f=/etc/lightdm/lightdm.conf.d/50-cpkit.conf
     if grep -rqs '^allow-guest=false' /etc/lightdm/; then echo "  ok   guest login disabled"

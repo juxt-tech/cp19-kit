@@ -16,6 +16,7 @@ for u in cups.service cups.socket cups.path avahi-daemon.service avahi-daemon.so
 done
 t "README ftp -> vsftpd still enabled" systemctl is-enabled vsftpd.service
 t "README ftp -> vsftpd still running" systemctl is-active vsftpd.service
+t "Ctrl-Alt-Del reboot masked" sh -c "systemctl is-enabled ctrl-alt-del.target | grep -q masked"
 
 bash $K/harden.sh --config /tmp/c.txt --apply --yes --module services > /tmp/s2.txt 2>&1
 RUN2="$(ls -1d /root/cpkit-runs/* | tail -1)"

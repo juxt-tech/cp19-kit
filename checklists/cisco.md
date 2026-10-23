@@ -1,11 +1,10 @@
 # Cisco Networking Challenge Playbook (CyberPatriot 19)
 
 No AI during scored rounds. This is your solo playbook. Templates to copy are in `cisco/templates/`.
-Two parts: **(A) Packet Tracer** inside the CP testing VM and **(B) the NetAcad quiz**.
+Two parts: **(A) Packet Tracer** inside the CP testing VM and **(B) the NetAcad quiz**. **Click a section to open it.**
 
----
-
-## A. Packet Tracer: test-day flow
+<details>
+<summary><b>A. Packet Tracer: test-day flow</b> (before the day, on the day, habits)</summary>
 
 ### Before the day
 - [ ] VMware **25H2 / 26H1 or newer** (17.x can't open the VM).
@@ -15,7 +14,7 @@ Two parts: **(A) Packet Tracer** inside the CP testing VM and **(B) the NetAcad 
 ### On the day
 1. Start the VM → Windows password `cisco` → enter the **Unique ID** (check 0/O and 1/I) → Continue → read the summary → **Begin Test** → screenshot → **Start Test** (the timer starts here).
 2. Find the instructions: taskbar > **PT Activity:** → tick **Top**. Check the heading says **High School**.
-3. Read **all** the instructions once before touching anything. Note which devices are locked (clouds/ISP) — you just match their settings.
+3. Read **all** the instructions once before touching anything. Note which devices are locked (clouds/ISP): you just match their settings.
 4. Work device by device **in the order the instructions list them**. After each device: verify → `end` → `write mem` (or `copy run start`) → **Ctrl+S**.
 5. Physical tab: power on anything that's off (click the power switch).
 6. Verify end-to-end (section D). Then Ctrl+S → close Packet Tracer → **Yes** to save → **End Test** (wait up to a minute) → screenshot the Confirmation ID.
@@ -27,22 +26,26 @@ Two parts: **(A) Packet Tracer** inside the CP testing VM and **(B) the NetAcad 
 - After `no shutdown`, the link should go green (switch ports take ~30 s: orange → green).
 - Ctrl+S often. A crash = only saved work counts.
 
----
+</details>
 
-## B. Device order and what each usually needs
+<details>
+<summary><b>B. Device order and what each usually needs</b> (+ cable cheat sheet)</summary>
+
 | Device | Typical tasks | Template |
 |---|---|---|
 | Router | hostname, enable secret, console/vty passwords, banner, interface IPs + `no shut`, routing (static / EIGRP / OSPF), SSH | `01`, `02`, `04`, `05` |
-| Layer 3 switch (3560/3650) | `ip routing`, SVIs per VLAN, routed ports (`no switchport`), trunks with `encapsulation dot1q`, routing | `03`, `04` |
+| Layer 3 switch (3560/3650) | `ip routing`, SVIs per VLAN, routed ports (`no switchport`), trunks (`encapsulation dot1q` on 3560), routing | `03`, `04` |
 | Layer 2 switch (2960) | hostname, passwords, VLANs, access ports, trunks, VLAN 1 management IP + `ip default-gateway`, port security, unused ports shut | `01`, `03`, `05` |
 | PC / server | Desktop > IP Configuration: IP, mask, gateway, DNS; Config > Display Name; server Services tab (HTTP/FTP/DNS on/off) | `02` |
 | New device to add | End Devices → drag in; **lightning bolt → solid black "Copper Straight-Through"** → click device → pick a port → click switch → pick a free port | — |
 
 Cable cheat sheet: PC↔switch, switch↔router = **straight-through** (solid black). Switch↔switch, router↔router, PC↔router = crossover (dashed), though Packet Tracer auto-MDIX usually forgives straight-through. Serial (red ⚡) for WAN serial ports.
 
----
+</details>
 
-## C. Troubleshooting table
+<details>
+<summary><b>C. Troubleshooting table</b> (symptom → check → fix)</summary>
+
 | Symptom | Check | Fix |
 |---|---|---|
 | Red link triangles | `show ip interface brief` → "administratively down" | `interface X` → `no shutdown` |
@@ -56,7 +59,11 @@ Cable cheat sheet: PC↔switch, switch↔router = **straight-through** (solid bl
 | Password prompts locked you out | you set the password before finishing | it's the password from the instructions |
 | First ping drops 1-2 packets | ARP warming up | ping again |
 
-## D. Verification commands (memorise)
+</details>
+
+<details>
+<summary><b>D. Verification commands</b> (memorise)</summary>
+
 ```
 show ip interface brief        ! every interface: IP + up/up?
 show running-config            ! everything you configured
@@ -69,9 +76,11 @@ show port-security interface fa0/1
 ```
 PC: `ping <gateway>` → `ping <remote host>` → `ping <DNS name>` → browser `http://name` → `ftp <ip>`.
 
----
+</details>
 
-## E. Subnetting sheet
+<details>
+<summary><b>E. Subnetting sheet</b> (masks, wildcards, hosts, private ranges)</summary>
+
 | Prefix | Mask | Wildcard | Hosts |
 |---|---|---|---|
 | /24 | 255.255.255.0 | 0.0.0.255 | 254 |
@@ -82,20 +91,24 @@ PC: `ping <gateway>` → `ping <remote host>` → `ping <DNS name>` → browser 
 | /29 | 255.255.255.248 | 0.0.0.7 | 6 |
 | /30 | 255.255.255.252 | 0.0.0.3 | 2 (router-to-router links) |
 | /16 | 255.255.0.0 | 0.0.255.255 | 65,534 |
+
 Wildcard = 255.255.255.255 − mask. Network address = first address; broadcast = last; usable = the ones in between.
 Private ranges: `10.0.0.0/8`, `172.16.0.0/12` (172.16–172.31), `192.168.0.0/16`. `169.254.x.x` = APIPA (DHCP failed). `127.x` = loopback.
 
----
+</details>
 
-## F. Quiz (NetAcad) study map
+<details>
+<summary><b>F. Quiz (NetAcad) study map</b> + 30 practice questions</summary>
+
 CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions come from the newest ones.
+
 | Round | Topics |
 |---|---|
 | Round 1 | networking basics, network media, OSI/TCP-IP layers, Ethernet + MAC, switching, IPv4 addressing + subnetting, IOS CLI + basic device config, router security (passwords, SSH), static routing |
 | Round 2 | VLANs, trunks, inter-VLAN routing (router-on-a-stick, L3 switch SVIs), STP/RSTP (PortFast, BPDU Guard), EtherChannel, DHCP, OSPF single-area, port security |
 | State+ | ACLs, NAT, IPv6, wireless, WAN, network security threats |
 
-### Practice questions (answers + why at the bottom)
+### Practice questions
 1. Which device type forwards frames using MAC addresses?
 2. What is the subnet mask for /27?
 3. Which address is NOT private: 10.254.1.1, 172.32.10.200, 192.168.5.5?
@@ -103,7 +116,7 @@ CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions
 5. A Layer 2 broadcast frame's destination MAC is…?
 6. Which OSI layer adds source/destination IP addresses?
 7. Which command saves the running config so it survives a reboot?
-8. `Router>` vs `Router#` — which mode is each?
+8. `Router>` vs `Router#`: which mode is each?
 9. Which command encrypts all plain-text passwords in the config?
 10. Why is `enable secret` better than `enable password`?
 11. What two things must exist before `crypto key generate rsa` works?
@@ -127,7 +140,8 @@ CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions
 29. Which cable connects a PC to a switch?
 30. Why is Telnet insecure compared to SSH?
 
-<details><summary>Answers</summary>
+<details>
+<summary>Answers</summary>
 
 1. Switch (Layer 2).
 2. 255.255.255.224.
@@ -159,6 +173,9 @@ CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions
 28. Discover, Offer, Request, Acknowledge.
 29. Straight-through.
 30. Telnet sends everything, passwords included, in clear text; SSH encrypts it.
+
 </details>
 
 Study sources: the NetAcad course, Jeremy's IT Lab videos (the club's module map follows them), the club's Packet Tracer practice files (`2.5.5 Configure Initial Switch Settings`, `CCNA2 practice final`, "Baby Steps PKA").
+
+</details>

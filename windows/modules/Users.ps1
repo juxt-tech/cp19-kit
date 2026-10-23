@@ -126,4 +126,9 @@ function Invoke-CpModUsers {
         $m = @(Get-LocalGroupMember -Group $g -ErrorAction SilentlyContinue | ForEach-Object Name)
         if ($m.Count) { Add-CpFinding users "group '$($g.Name)' members: $($m -join ', ')  (check README)" }
     }
+    $g = Get-LocalGroup -SID 'S-1-5-32-546' -ErrorAction SilentlyContinue   # Guests should hold only Guest
+    if ($g) {
+        $m = @(Get-LocalGroupMember -Group $g -ErrorAction SilentlyContinue | ForEach-Object { ($_.Name -split '\\')[-1] } | Where-Object { $_ -ine 'Guest' })
+        if ($m.Count) { Add-CpFinding users "group '$($g.Name)' has extra members: $($m -join ', ')  (only Guest belongs there)" }
+    }
 }
