@@ -1,5 +1,7 @@
 # Windows 10/11 Checklist (CyberPatriot 19)
 
+> **Windows status:** the Windows/Server script passes 86 unit tests but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
+
 Format: `[ ] what — why — how to check`. Work top to bottom. **Snapshot before every numbered section.**
 Scored categories (official): User Auditing · Account Policies · Local Policies · Defensive Countermeasures · Service Auditing · OS Updates · App Updates · App Security Settings · Unwanted Software · Prohibited Files · Malware · Uncategorized OS Settings · Forensics.
 

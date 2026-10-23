@@ -2,6 +2,8 @@
 
 Audit-first, README-driven hardening scripts and checklists for CyberPatriot 19.
 
+> **Windows status:** the Windows/Server script passes 86 unit tests but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
+
 | OS | Script | Checklist |
 |---|---|---|
 | Windows 10 / 11 | `windows/harden.ps1` | [checklists/windows.md](checklists/windows.md) |
