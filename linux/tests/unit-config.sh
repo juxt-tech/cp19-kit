@@ -17,3 +17,13 @@ chpasswd() { cat >> "$T/calls"; }
 _add_user cupid >/dev/null 2>&1
 eq "new user gets the exact NEW_PASSWORD" "$(grep -v '^useradd' "$T/calls")" "cupid:Ab#12'x\$y\Z!"
 unset -f useradd chpasswd; CP_NEWPASS=""
+
+# Commas in lists (people type "santa, prancer"): must split like spaces, or santa looks unauthorized.
+c="$T/comma.txt"
+printf 'ADMINS=santa,prancer\nUSERS=cupid, dasher ,blitzen\nCRITICAL_SERVICES=ssh,vsftpd\n' > "$c"
+cp_load_config "$c" >/dev/null
+eq "ADMINS commas split"            "$CP_ADMINS"   "santa prancer"
+eq "USERS comma+space split"        "$CP_USERS"    "cupid dasher blitzen"
+eq "CRITICAL commas split"          "$CP_CRITICAL" "ssh vsftpd"
+yes_ "santa recognised as admin"    cp_in_list santa "$CP_ADMINS"
+cp_load_config "$ROOT/config/cp-config.example.txt" >/dev/null   # restore for later tests

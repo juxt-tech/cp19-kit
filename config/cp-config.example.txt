@@ -1,5 +1,5 @@
 # CyberPatriot kit config. Fill this in FROM THE ROUND README before running anything.
-# One KEY=value per line. Lists are space-separated. Lines starting with # are ignored.
+# One KEY=value per line. Separate list items with spaces (commas also work). Lines starting with # are ignored.
 # NEW_PASSWORD is taken exactly as typed (it may contain # and '), so never put a comment after it.
 # Save your copy as cp-config.txt next to the script.
 

@@ -69,7 +69,7 @@ cp_load_config() {
             # passwords may contain # ' and spaces: keep exactly, trim only the ends
             val="$(printf '%s' "$val" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
         else
-            val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//' | awk '{$1=$1; print}')"
+            val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//' | tr ',' ' ' | awk '{$1=$1; print}')"   # commas = spaces
         fi
         case "$key" in
             ADMINS) CP_ADMINS="$val" ;;
