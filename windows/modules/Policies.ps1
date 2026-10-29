@@ -47,6 +47,38 @@ $script:CpSecurityOptions = [ordered]@{
     "$L\MSV1_0\allownullsessionfallback"  = '4,0'    # no LocalSystem NULL session fallback
 }
 
+# Scored settings secedit can't set (not in its Security Options list). Seen in practice-image answer keys.
+$script:CpExtraSecurityRegistry = @(
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\LanmanWorkstation' AllowInsecureGuestAuth 0 'Enable insecure guest logons = Disabled'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters' AllowInsecureGuestAuth 0 'no unauthenticated guest SMB access'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' EnableSmartScreen 1 'Defender SmartScreen on'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' ShellSmartScreenLevel 'Warn' 'SmartScreen configured to warn' 'String'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' NoDriveTypeAutoRun 255 'AutoPlay off for all drives'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' NoAutorun 1 'no autorun.inf commands'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' NoAutoplayfornonVolume 1 'AutoPlay off for phones/cameras'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest' UseLogonCredential 0 'no plaintext passwords in LSASS (mimikatz)'
+)
+
+# Pure. BcdText = 'bcdedit /enum {current}' output. Returns the nx policy, or $null if not shown.
+function Get-CpDepPolicy([string]$BcdText) {
+    foreach ($line in ($BcdText -split "`r?`n")) { if ($line -match '^\s*nx\s+(\S+)') { return $Matches[1] } }
+    return $null
+}
+
+function Invoke-CpDep {
+    $nx = Get-CpDepPolicy ((& bcdedit.exe /enum '{current}' 2>$null) -join "`n")
+    if (-not $nx) { Add-CpFinding securityoptions 'could not read DEP (bcdedit /enum {current}) - check System > Advanced > Performance > DEP by hand'; return }
+    if ($nx -in 'OptOut','AlwaysOn') { Write-CpOk "DEP = $nx (all programs)"; return }
+    $bl = $null   # Server has no BitLocker cmdlets unless the feature is installed
+    if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) { $bl = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue }
+    if ($bl -and "$($bl.ProtectionStatus)" -eq 'On') {
+        Add-CpFinding securityoptions "DEP is $nx. BitLocker is on, so the kit won't touch boot settings. Set DEP for all programs by hand (System > Advanced > Performance > DEP)"
+        return
+    }
+    Invoke-CpAction securityoptions "DEP $nx -> OptOut (all programs and services; reboot later)" 'DEP enabled system wide' {
+        & bcdedit.exe /set '{current}' nx OptOut | Out-Null }
+}
+
 # User Rights Assignment (Local Policies). REPORT ONLY: a wrong removal here can break services or logons.
 $script:CpRightNames = @{
     SeDebugPrivilege='Debug programs'; SeTcbPrivilege='Act as part of the operating system'; SeCreateTokenPrivilege='Create a token object'
@@ -83,7 +115,11 @@ function Get-CpUserRightsFindings {
             } elseif ($r -in 'SeNetworkLogonRight','SeInteractiveLogonRight','SeRemoteInteractiveLogonRight','SeBatchLogonRight','SeServiceLogonRight') {
                 $bad = (& $isGuest $e) -or $e -eq '*S-1-5-7' -or ($r -ne 'SeNetworkLogonRight' -and $e -eq '*S-1-1-0')
             }
-            if ($bad) { $out += "user right '$name' ($r) is held by $(& $show $e) - remove it in secpol.msc > User Rights Assignment unless the README needs it" }
+            if ($bad) { $out += "user right '$name' ($r) is held by $(& $show $e) - remove it in secpol.msc > User Rights Assignment unless the README needs it"; continue }
+            # a plain user with "Log on as a service/batch job" is a planted backdoor unless it's a README service account
+            if ($r -in 'SeServiceLogonRight','SeBatchLogonRight' -and ($e -match '^\*S-1-5-21-' -or $e -notmatch '^(\*|NT SERVICE\\|IIS APPPOOL\\)')) {
+                $out += "user right '$name' ($r) is held by account $(& $show $e) - remove it unless the README names it as a service account"
+            }
         }
     }
     if (-not @($rights['SeDenyNetworkLogonRight'] | Where-Object { & $isGuest $_ }).Count) {
@@ -124,6 +160,8 @@ function Invoke-CpModSecurityOptions {
     param($Config)
     Write-CpHeader 'SECURITY OPTIONS  (UAC, anonymous access, NTLM, SMB signing)'
     Invoke-CpSeceditSection -Module securityoptions -Section 'Registry Values' -Wanted $script:CpSecurityOptions -Why 'Local Policies > Security Options'
+    Invoke-CpRegistrySettings -Module securityoptions -Wanted $script:CpExtraSecurityRegistry
+    Invoke-CpDep
     $inf = Export-CpSecPolicy
     if ($inf) {
         $f = @(Get-CpUserRightsFindings -InfText $inf)

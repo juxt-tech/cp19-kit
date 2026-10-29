@@ -6,7 +6,8 @@ $script:CpBadSoftware = @('Wireshark','Nmap','Zenmap','Angry IP','Cain','CCleane
     'qBittorrent','Vuze','FrostWire','iTunes','Bonjour','Driver Support','Web Companion','NetStumbler','PC Cleaner','GooseDesktop',
     'Npcap','WinPcap','FileZilla Server','Tor Browser','Ophcrack','John the Ripper','Hashcat','Hydra','Metasploit','Burp Suite',
     'Netcat','Steam','Epic Games','Minecraft','Roblox','Discord','Spotify','LogMeIn','RealVNC','TightVNC','UltraVNC','Ammyy',
-    'WinSMS','Shareaza','LimeWire','Kazaa','Advanced SystemCare','MyCleanPC','Reimage','SlimCleaner','Ask Toolbar')
+    'WinSMS','Shareaza','LimeWire','Kazaa','Advanced SystemCare','MyCleanPC','Reimage','SlimCleaner','Ask Toolbar',
+    'BitComet','Mimikatz','McAfee','2048','Cheat Engine','Process Hacker','Netscape','Hamachi','RustDesk')
 $script:CpBadKeywords = 'crack|keygen|hack|torrent|cheat|password ?(recovery|cracker)|sniff|keylog|spy'
 
 # Pure: which installed program names to flag.
@@ -46,20 +47,64 @@ function Invoke-CpModSoftware {
     foreach ($d in $odd) { Add-CpFinding software "non-standard folder on C:\: $($d.FullName)" }
 }
 
+# Pure: Luhn check, so random 16-digit numbers (order IDs, GUID pieces) aren't reported as cards.
+function Test-CpLuhn([string]$Digits) {
+    $d = $Digits -replace '\D', ''
+    if ($d.Length -lt 13 -or $d.Length -gt 19) { return $false }
+    $sum = 0; $alt = $false
+    for ($i = $d.Length - 1; $i -ge 0; $i--) {
+        $n = [int][string]$d[$i]
+        if ($alt) { $n *= 2; if ($n -gt 9) { $n -= 9 } }
+        $sum += $n; $alt = -not $alt
+    }
+    return ($sum % 10 -eq 0)
+}
+
+# Pure: Luhn alone passes 1 in 10 random numbers (13-digit millisecond timestamps in logs),
+# so also require a real card prefix + length: Visa, Mastercard, Amex, Discover.
+function Test-CpCardNumber([string]$Text) {
+    $d = $Text -replace '\D', ''
+    $brand = ($d -match '^4' -and $d.Length -in 13, 16, 19) -or ($d -match '^(5[1-5]|2[2-7])' -and $d.Length -eq 16) -or
+             ($d -match '^3[47]' -and $d.Length -eq 15) -or ($d -match '^6(011|5|4[4-9])' -and $d.Length -in 16..19)
+    return ($brand -and (Test-CpLuhn $d))
+}
+
+# Pure: what kind of sensitive data a text holds ('credit card', 'SSN'), for "plaintext PII file" vulns.
+function Get-CpPiiKinds([string]$Text) {
+    $out = @()
+    foreach ($m in [regex]::Matches($Text, '(?<![\d-])(?:\d[ -]?){12,18}\d(?![\d-])')) {
+        if (Test-CpCardNumber $m.Value) { $out += 'credit card'; break }
+    }
+    # SSN rules: area not 000/666/9xx, group not 00, serial not 0000
+    if ($Text -match '(?<![\d-])(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?![\d-])') { $out += 'SSN' }
+    return ,$out
+}
+
 function Invoke-CpModMedia {
     param($Config)
     Write-CpHeader 'MEDIA / PROHIBITED FILES  (report only)'
-    $ext = '*.mp3','*.mp4','*.avi','*.mkv','*.mov','*.wav','*.flac','*.ogg','*.m4a','*.wma','*.aac','*.wmv','*.flv','*.webm','*.jpg','*.jpeg','*.png','*.gif','*.zip','*.7z','*.rar','*.tar','*.gz','*.kdbx','*.pcap','*.pcapng'
-    $roots = @('C:\Users') + @(Get-ChildItem 'C:\' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(Windows|Program Files.*|ProgramData|Users|PerfLogs|Recovery|\$.*|System Volume Information|cpkit-runs)$' } | ForEach-Object FullName)
+    $mediaRe = '\.(mp3|mp4|avi|mkv|mov|wav|flac|ogg|m4a|wma|aac|wmv|flv|webm|jpg|jpeg|png|gif|zip|7z|rar|tar|gz|kdbx|pcap|pcapng)$'
+    $suspRe  = 'password|passwd|secret|credit|\.(exe|msi|bat|vbs|ps1|hta|scr)$'
+    $textRe  = '\.(txt|csv|log|rtf|md|xml|json|ini|dat|bak)$'
+    $roots = @('C:\Users') + @(Get-ChildItem 'C:\' -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(Windows|Program Files.*|ProgramData|Users|PerfLogs|Recovery|\$.*|System Volume Information|cpkit-runs|Config\.Msi|Documents and Settings)$' } | ForEach-Object FullName)
+    # Find-CpFiles sees HIDDEN files (CP plants them with attrib +h; plain Get-ChildItem misses them).
+    # AppData is skipped: browser caches are full of images and nobody scores them.
+    $kitRoot = Split-Path (Split-Path $PSScriptRoot)   # don't report the kit's own scripts / its download zip
+    $skipDir = '\\AppData$|\\node_modules$|\\\.git$|^' + [regex]::Escape($kitRoot) + '$'
     $n = 0
-    foreach ($r in $roots) {
-        Get-ChildItem $r -Recurse -File -Include $ext -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch '\\AppData\\Local\\(Microsoft|Packages|Temp)\\|\\AppData\\Roaming\\Microsoft\\|\\Windows\\' } |
-            ForEach-Object { Add-CpFinding media "file: $($_.FullName)  ($([math]::Round($_.Length/1KB))KB)"; $n++ }
+    $files = foreach ($r in $roots) {
+        Find-CpFiles -Root $r -NameRegex "$mediaRe|$suspRe|$textRe" -SkipDirRegex $skipDir | Where-Object { [IO.Path]::GetFileName($_) -notlike 'cp19-kit*' } | ForEach-Object { New-Object IO.FileInfo $_ }
     }
-    Get-ChildItem 'C:\Users' -Recurse -File -Include '*password*','*passwd*','*secret*','*credit*','*.exe','*.msi','*.bat','*.vbs','*.ps1' -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match '\\(Desktop|Documents|Downloads|Music|Pictures|Videos)\\' } |
-        ForEach-Object { Add-CpFinding media "suspicious file: $($_.FullName)"; $n++ }
+    $tag = { param($f) if ($f.Attributes -band [IO.FileAttributes]::Hidden) { '  HIDDEN' } else { '' } }
+    foreach ($f in $files) {
+        if ($f.Name -match $mediaRe) { Add-CpFinding media "file: $($f.FullName)  ($([math]::Round($f.Length/1KB))KB)$(& $tag $f)"; $n++ }
+        elseif ($f.FullName -match '^C:\\Users\\' -and $f.Name -match $suspRe -and $f.Name -ne 'desktop.ini') { Add-CpFinding media "suspicious file: $($f.FullName)$(& $tag $f)"; $n++ }
+        # plaintext card numbers / SSNs ("unencrypted medical records", "hidden file with credit cards")
+        if ($f.Name -match $textRe -and $f.Length -lt 2MB) {
+            $kinds = @(); try { $kinds = Get-CpPiiKinds ([IO.File]::ReadAllText($f.FullName)) } catch { }
+            if ($kinds.Count) { Add-CpFinding media "plaintext $($kinds -join ' + ') in: $($f.FullName)$(& $tag $f)  (forensics first, then delete)"; $n++ }
+        }
+    }
     Write-Host "  $n file(s) listed in findings.txt"
 }
 
@@ -94,6 +139,33 @@ function Invoke-CpModPersistence {
     } | Sort-Object Port -Unique
     if ($ctx.RunDir) { $listen | Format-Table -AutoSize | Out-String -Width 250 | Set-Content (Join-Path $ctx.RunDir 'listening.txt') -Encoding ASCII; Write-Host "  listening ports: $(Join-Path $ctx.RunDir 'listening.txt')" }
     $listen | Where-Object { $_.Path -and $_.Path -notmatch '(?i)\\Windows\\|\\Program Files' } | ForEach-Object { Add-CpFinding persistence "listener on port $($_.Port): $($_.Process) $($_.Path)  (backdoor? forensics often asks the port)" }
-    Get-ChildItem 'C:\' -Recurse -File -Include 'nc.exe','nc64.exe','ncat.exe','netcat.exe','bd.exe','*backdoor*','*keylog*','mimikatz*','psexec*' -ErrorAction SilentlyContinue |
-        ForEach-Object { Add-CpFinding persistence "suspicious binary: $($_.FullName)" }
+    Find-CpFiles -Root 'C:\' -NameRegex '^(nc|nc64|ncat|netcat|bd)\.exe$|backdoor|keylog|^mimi(katz|drv|lib)|^psexec' -SkipDirRegex '\\Windows\\WinSxS$|\\cpkit-runs$' |
+        ForEach-Object { Add-CpFinding persistence "suspicious binary: $_" }
+
+    # --- less obvious spots (persistence-themed practice images) ---
+    # GlobalFlag + SilentProcessExit: runs a program whenever another one exits
+    Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit' -ErrorAction SilentlyContinue | ForEach-Object {
+        $mp = (Get-ItemProperty $_.PSPath).MonitorProcess; if ($mp) { Add-CpFinding persistence "SilentProcessExit: when $($_.PSChildName) exits, runs $mp" } }
+    foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Windows') {
+        $a = (Get-ItemProperty $k -ErrorAction SilentlyContinue).AppInit_DLLs; if ($a) { Add-CpFinding persistence "AppInit_DLLs ($k): $a  (loads into every GUI program)" } }
+    # WMI event subscriptions: survive reboots, invisible in Task Scheduler
+    Get-CimInstance -Namespace root\subscription -ClassName __EventConsumer -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'SCM Event Log Consumer' } |
+        ForEach-Object { Add-CpFinding persistence "WMI event consumer '$($_.Name)' ($($_.CimClass.CimClassName)): $($_.CommandLineTemplate)$($_.ScriptText)" }
+    # accessibility tools swapped for cmd.exe = logon-screen backdoor (sticky keys)
+    foreach ($b in 'sethc.exe','utilman.exe','osk.exe','Magnify.exe','Narrator.exe','DisplaySwitch.exe','AtBroker.exe') {
+        $p = Join-Path "$env:windir\System32" $b
+        if (-not (Test-Path $p)) { continue }
+        $sig = Get-AuthenticodeSignature $p -ErrorAction SilentlyContinue
+        $desc = (Get-Item $p).VersionInfo.FileDescription
+        if (($sig -and $sig.Status -ne 'Valid') -or $desc -match 'Command Processor|PowerShell|Explorer') { Add-CpFinding persistence "$p is not the real $b (signature $($sig.Status), '$desc') - accessibility backdoor" }
+    }
+    # tasks hidden under \Microsoft\ that run scripts from user-writable places
+    Get-ScheduledTask -TaskPath '\Microsoft\*' -ErrorAction SilentlyContinue | Where-Object State -ne 'Disabled' | ForEach-Object {
+        $a = ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
+        if ($a -match '(?i)\\Users\\|\\Temp\\|\\Public\\|-enc|encodedcommand|http[s]?://|mshta|wscript|cscript|regsvr32 /s /i') { Add-CpFinding persistence "suspicious Microsoft-folder task $($_.TaskPath)$($_.TaskName): $a" }
+    }
+    # drivers loaded from outside Windows (mimikatz mimidrv, rootkits)
+    Get-CimInstance Win32_SystemDriver -ErrorAction SilentlyContinue | Where-Object { $_.PathName -and $_.PathName -notmatch '(?i)\\Windows\\|\\Program Files|^\\SystemRoot\\|^System32\\' } |
+        ForEach-Object { Add-CpFinding persistence "driver '$($_.Name)' ($($_.State)) loads from: $($_.PathName)" }
 }

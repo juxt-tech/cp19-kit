@@ -55,3 +55,15 @@ Scored checks: unauthorized users/admins removed; insecure password changed; min
 - Discord CDN attachments (CIS PDFs, `daniel_plaza` Windows hardening PDF): expiring links. Public CIS benchmarks are used instead.
 - Dudcom/TroyHS and 0x000NULL/CSSR zips failed to download. Optional; the coverage above is enough.
 - Cisco question bank (60 KB) and the 2025 Cisco NetAcad supplement doc are downloaded, for the Cisco playbook phase.
+
+## 7. Practice-image answer keys (2026-10-29)
+Source: the club's "Practice Images" sheet (Windows tab). Only the public answer keys / walkthroughs were read; the images themselves were not run.
+
+| Image | OS | What it scored that the kit missed |
+|---|---|---|
+| District 13 (brody001301) | Server 2022 DC + AD CS + IIS + SQL | **Penalties:** deleting the IIS/SQL service account `svc_iis_caseportal`, stopping the IIS site/app pool, uninstalling README tools (Wireshark, Notepad++), changing the adapter's DNS server. FQ: IFEO `Debugger` hijack of powershell.exe (delete key **and** target file); Certifried (CVE-2022-26923) event IDs 4886/4887/4738. |
+| L'Équipe du Dictateur (G01D3N) | Win11 | SMB minimum 3.1.1, insecure guest logons off, SmartScreen = Warn, DHCP Client + Event Log running, hidden file with plaintext credit cards, RDP NLA + SSL, Firefox HTTPS-only/pop-ups/auto-update, folder write ACL. |
+| Cincinnati Zoo (Donkey) | Win10 | DEP system-wide, "Only elevate signed executables", *Log on as a service* removed from a user, DHCP/Event Log/Server automatic, insecure guest logons off. |
+| Princeton-Plainsboro (x1nni) | Win11 | Defender default action for severe threats ≠ ignore, script scanning, RDP secure RPC + SSL, Remote Management Users, mimikatz driver, AnyDesk/McAfee, unencrypted medical records, ASR "Win32 imports from Office macros", task named like an Edge update task. |
+
+Kit changes from this: see BACKLOG "Practice-image answer keys". Not automated on purpose: ValidateAdminCodeSignatures (blocks unsigned installers), ASR rules (Office only), BitLocker, Firefox prefs, folder ACLs → checklist.

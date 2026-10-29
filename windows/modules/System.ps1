@@ -8,8 +8,12 @@ $script:CpBadServices = @(
     'WebClient','MSiSCSI'
 )
 $script:CpRdpServices = @('TermService','SessionEnv','UmRdpService')   # only disabled when KEEP_RDP=no
-$script:CpMustRun = @('wuauserv','WinDefend','mpssvc','EventLog','wscsvc','BFE')
-$script:CpNeverTouch = @('Dnscache','Dhcp','RpcSs','LSM','LanmanWorkstation','Netlogon','NTDS','DNS','W32Time')
+# Answer keys score DHCP Client, Event Log and Server (LanmanServer) as "running + automatic".
+$script:CpMustRun = @('wuauserv','WinDefend','mpssvc','EventLog','wscsvc','BFE','Dhcp','LanmanServer')
+# ...and Automatic is not enough for these: a planted "Automatic but stopped" still loses the points.
+# (wuauserv is left out: it stops by itself when idle, so a re-run would never show 0 changes.)
+$script:CpMustBeRunning = @('WinDefend','mpssvc','EventLog','BFE','Dhcp','LanmanServer')
+$script:CpNeverTouch = @('Dnscache','RpcSs','LSM','LanmanWorkstation','Netlogon','NTDS','DNS','W32Time')
 
 # Pure. Services = objects with Name, StartType, Status.
 function Get-CpServicePlan {
@@ -27,7 +31,8 @@ function Get-CpServicePlan {
         if ($bad -contains $n -and ([string]$s.StartType -ne 'Disabled' -or [string]$s.Status -eq 'Running')) {
             $plan.Add([pscustomobject]@{ Action='Disable'; Name=$n })
         }
-        if ($script:CpMustRun -contains $n -and [string]$s.StartType -ne 'Automatic') {
+        if ($script:CpMustRun -contains $n -and ([string]$s.StartType -ne 'Automatic' -or
+                ($script:CpMustBeRunning -contains $n -and [string]$s.Status -ne 'Running'))) {
             $plan.Add([pscustomobject]@{ Action='EnableAuto'; Name=$n })
         }
     }
@@ -45,7 +50,10 @@ function Invoke-CpModServices {
         switch ($a.Action) {
             'KeepCritical' { Write-CpOk "$n ($dn) kept - README critical" }
             'Disable'      { Invoke-CpAction services "stop + disable $n ($dn)" 'risky service not required by README' { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue; Set-Service -Name $n -StartupType Disabled -ErrorAction Stop }.GetNewClosure() }
-            'EnableAuto'   { Invoke-CpAction services "set $n ($dn) Automatic + start" 'core security service must run' { Set-Service -Name $n -StartupType Automatic -ErrorAction Stop; Start-Service -Name $n -ErrorAction SilentlyContinue }.GetNewClosure() }
+            'EnableAuto'   {
+                # wuauserv may legitimately stay stopped until needed; the others must really start
+                $ea = if ($script:CpMustBeRunning -contains $n) { 'Stop' } else { 'SilentlyContinue' }
+                Invoke-CpAction services "set $n ($dn) Automatic + start" 'core service must run (scored)' { Set-Service -Name $n -StartupType Automatic -ErrorAction Stop; Start-Service -Name $n -ErrorAction $ea }.GetNewClosure() }
         }
     }
     foreach ($c in $Config.Critical) {
@@ -75,6 +83,19 @@ function Invoke-CpModFirewall {
         ForEach-Object { Add-CpFinding firewall "custom inbound ALLOW rule: '$($_.DisplayName)'  (needed by README?)" }
 }
 
+# Defender threat actions: 6 = Allow, 8 = UserDefined, 9 = NoAction. 0 = default (fine), 2 = Quarantine.
+$script:CpBadThreatActions = @('6','8','9')
+
+# Pure: Mp = object with Low/Moderate/High/Severe/UnknownThreatDefaultAction. Returns the property names to reset.
+function Get-CpThreatActionPlan {
+    param([Parameter(Mandatory)]$Mp)
+    $out = @()
+    foreach ($p in 'LowThreatDefaultAction','ModerateThreatDefaultAction','HighThreatDefaultAction','SevereThreatDefaultAction','UnknownThreatDefaultAction') {
+        if ("$($Mp.$p)" -in $script:CpBadThreatActions) { $out += $p }
+    }
+    return ,$out
+}
+
 # Pure: which Defender *policy* values to delete. Values = @{ 'Sub\Key\ValueName' = data }.
 # Group Policy values beat Set-MpPreference, so planted "Disable*=1" policies must go.
 function Get-CpDefenderPolicyPlan {
@@ -83,7 +104,9 @@ function Get-CpDefenderPolicyPlan {
     foreach ($k in $Values.Keys) {
         $leaf = ($k -split '\\')[-1]
         if ($k -like 'Exclusions\*') { $out += $k; continue }
-        if ($leaf -like 'Disable*' -and "$($Values[$k])" -ne '0') { $out += $k }
+        if ($leaf -like 'Disable*' -and "$($Values[$k])" -ne '0') { $out += $k; continue }
+        # "default action for severe threats = Allow / No action" (PPTH answer key)
+        if ($k -like 'Threats\ThreatSeverityDefaultAction\*' -and "$($Values[$k])" -in $script:CpBadThreatActions) { $out += $k }
     }
     return ,$out
 }
@@ -127,6 +150,10 @@ function Invoke-CpModDefender {
         if ("$($mp.$k)" -eq "$($want[$k])") { Write-CpOk "$k = $($want[$k])"; continue }
         $v = $want[$k]
         Invoke-CpAction defender "Defender $k -> $v (now $($mp.$k))" 'antivirus protection must be fully on' { $h = @{ $k = $v }; Set-MpPreference @h -ErrorAction Stop }.GetNewClosure()
+    }
+    foreach ($k in Get-CpThreatActionPlan -Mp $mp) {
+        $name = $k
+        Invoke-CpAction defender "Defender $name -> Quarantine (now $($mp.$name))" 'threats must not be allowed / ignored' { $h = @{ $name = 'Quarantine' }; Set-MpPreference @h -ErrorAction Stop }.GetNewClosure()
     }
     foreach ($t in 'ExclusionExtension','ExclusionPath','ExclusionProcess','ExclusionIpAddress') {
         foreach ($x in @($mp.$t | Where-Object { $_ })) {
@@ -179,6 +206,10 @@ function Invoke-CpModShares {
     $srv = Get-SmbServerConfiguration
     if ($srv.EnableSMB1Protocol) { Invoke-CpAction shares 'disable SMBv1 server' 'SMBv1 = WannaCry/EternalBlue' { Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force -ErrorAction Stop } } else { Write-CpOk 'SMBv1 server off' }
     if (-not $srv.RequireSecuritySignature) { Invoke-CpAction shares 'require SMB signing (server)' 'prevents SMB relay/tampering' { Set-SmbServerConfiguration -RequireSecuritySignature $true -EnableSecuritySignature $true -Force -ErrorAction Stop } } else { Write-CpOk 'SMB signing required' }
+    # Smb2DialectMin only exists on Win11 24H2 / Server 2025 (L'Equipe key: "SMB minimum version 3.1.1")
+    if ($srv.PSObject.Properties['Smb2DialectMin']) {
+        if ("$($srv.Smb2DialectMin)" -ne 'SMB311') { Invoke-CpAction shares "SMB minimum dialect $($srv.Smb2DialectMin) -> SMB311" 'scored: SMB minimum version 3.1.1' { Set-SmbServerConfiguration -Smb2DialectMin SMB311 -Force -ErrorAction Stop } } else { Write-CpOk 'SMB minimum dialect 3.1.1' }
+    }
     if (-not $srv.EncryptData) { Add-CpFinding shares 'SMB encryption off (Set-SmbServerConfiguration -EncryptData $true) - can break old clients, decide by README' }
     $f = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction SilentlyContinue
     if ($f -and $f.State -eq 'Enabled') { Invoke-CpAction shares 'remove SMB1Protocol feature (reboot later)' 'SMBv1 client+server removed' { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction Stop | Out-Null } }
@@ -199,6 +230,15 @@ function Invoke-CpModRemote {
         if ($r.UserAuthentication -ne 1) { Invoke-CpAction remote 'require Network Level Authentication for RDP' 'CP19 scored: NLA on' { Backup-CpRegistry 'HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'; Set-ItemProperty $rdp UserAuthentication 1 -Type DWord } } else { Write-CpOk 'RDP NLA required' }
         if ($r.SecurityLayer -ne 2) { Invoke-CpAction remote 'RDP security layer = TLS' 'encrypts RDP with TLS' { Set-ItemProperty $rdp SecurityLayer 2 -Type DWord } } else { Write-CpOk 'RDP uses TLS' }
         if ($r.MinEncryptionLevel -lt 3) { Invoke-CpAction remote 'RDP encryption level = High' 'strong RDP encryption' { Set-ItemProperty $rdp MinEncryptionLevel 3 -Type DWord } }
+        # answer keys check the Group Policy copies too (gpedit > Remote Desktop Session Host > Security)
+        $pol = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+        Invoke-CpRegistrySettings -Module remote -Wanted @(
+            New-CpReg $pol UserAuthentication 1 'policy: require NLA'
+            New-CpReg $pol SecurityLayer 2 'policy: RDP security layer = SSL'
+            New-CpReg $pol MinEncryptionLevel 3 'policy: RDP encryption = High'
+            New-CpReg $pol fEncryptRPCTraffic 1 'policy: require secure RPC communication'
+            New-CpReg $pol fPromptForPassword 1 'policy: always prompt for password'
+        )
     } elseif ($deny -ne 1) {
         Invoke-CpAction remote 'disable Remote Desktop connections' 'README does not require RDP (KEEP_RDP=no)' { Backup-CpRegistry 'HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server'; Set-ItemProperty $ts fDenyTSConnections 1 -Type DWord }
     } else { Write-CpOk 'Remote Desktop off' }

@@ -2,7 +2,7 @@
 
 Audit-first, README-driven hardening scripts and checklists for CyberPatriot 19.
 
-> **Windows status:** the Windows/Server script passes 86 unit tests but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
+> **Windows status:** the Windows/Server script passes 143 unit tests but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
 
 | OS | Script | Checklist |
 |---|---|---|
@@ -51,7 +51,7 @@ Run folder: `/root/cpkit-runs/<time>/`
 ## Tests
 - Linux: `bash linux/tests/run-tests.sh` builds a vulnerable Mint 21, Debian 12 and Ubuntu 22.04 container. It checks that audit changes nothing, that apply fixes every planted vuln (36 checks), that README users/services survive, and that a second run changes nothing.
 - Linux services under a real systemd: `bash linux/tests/systemd-test.sh` (service + socket + path units disabled, README services kept).
-- Windows: `Invoke-Pester .\windows\tests` (Pester 3.4, built into Windows) runs 99 unit tests of the decision logic.
+- Windows: `Invoke-Pester .\windows\tests` (Pester 3.4, built into Windows) runs 143 unit tests of the decision logic.
 
 ## Credits (ideas only, no code copied)
 Club slide decks and answer keys (CyberPatriot Discord), the CP vulnerability-category guide, and these public projects for ideas and structure: WhereIsXuezugi/CPLHF (MIT), Ripper1004/CyberPatriot-Toolkit, ninayxx/mint21_script, maytees/cypat-ubuntu-script, BiermanM/CyberPatriot-Scripts, tinkerrc/cypalinux, xFaraday/EzScript, AwSkies/CPWindowsScripts, ProgrammerManan/CyberPatriot-Scripts, frxyoz/windowssecurer, jxv133-sys/cyberpatriot-server2022-checker, DavidBootle/Server2016Scripts, ponkio/CyberPatriot. See [docs/research.md](docs/research.md).

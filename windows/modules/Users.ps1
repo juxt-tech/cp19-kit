@@ -11,6 +11,7 @@ function Get-CpUserPlan {
         [string[]]$DisabledUsers = @(),
         [string[]]$NoPasswordRequired = @(),
         [string[]]$NeverExpires = @(),
+        [string[]]$ServiceAccounts = @(),      # used by a service / app pool / SPN: never deleted or demoted
         [switch]$IsDC
     )
     $builtin  = @('Administrator','Guest','DefaultAccount','WDAGUtilityAccount','defaultuser0','krbtgt')
@@ -20,9 +21,13 @@ function Get-CpUserPlan {
     $plan = New-Object System.Collections.Generic.List[object]
     $add  = { param($a, $n) $plan.Add([pscustomobject]@{ Action = $a; Name = $n }) }
 
+    $isSvc = { param($n) @($ServiceAccounts | Where-Object { $_ -ieq $n }).Count -gt 0 }
     foreach ($u in $LocalUsers) {
         if ($u -ieq $CurrentUser -or $builtin -contains $u) { continue }
-        if ($listed -notcontains $u) { & $add $p.Remove $u }
+        if ($listed -notcontains $u) {
+            # District 13 penalty: deleting the IIS/SQL service account broke the site (-5)
+            if (& $isSvc $u) { & $add 'KeepServiceAccount' $u } else { & $add $p.Remove $u }
+        }
     }
     foreach ($u in $listed) {
         if ($u -ieq $CurrentUser) { continue }
@@ -35,7 +40,7 @@ function Get-CpUserPlan {
     }
     foreach ($m in $Admins) {
         if ($m -ieq $CurrentUser -or $builtin -contains $m) { continue }
-        if ($Config.Admins -notcontains $m) { & $add $p.DelA $m }
+        if ($Config.Admins -notcontains $m) { if (& $isSvc $m) { & $add 'KeepServiceAdmin' $m } else { & $add $p.DelA $m } }
     }
     foreach ($b in 'Administrator','Guest') {
         if ($b -ieq $CurrentUser) { continue }
@@ -48,6 +53,34 @@ function Get-CpUserPlan {
         if ($u -ine $CurrentUser -and $listed -contains $u) { & $add 'PasswordNeverExpiresOff' $u }
     }
     return ,$plan.ToArray()
+}
+
+# Pure. 'DOM\svc', '.\svc', 'svc@dom.local', 'svc' -> 'svc'. Built-in identities -> $null.
+function ConvertTo-CpSamName([string]$Account) {
+    if (-not $Account) { return $null }
+    $a = $Account.Trim()
+    if ($a -match '^(NT AUTHORITY|NT SERVICE|IIS APPPOOL|NT VIRTUAL MACHINE|Window Manager|Font Driver Host)\\' -or $a -match '^(LocalSystem|SYSTEM|LocalService|NetworkService|ApplicationPoolIdentity|S-1-5-\d+)$') { return $null }
+    $a = ($a -split '\\')[-1]
+    $a = ($a -split '@')[0]
+    if (-not $a -or $a.EndsWith('$')) { return $null }   # computer / managed service accounts
+    return $a
+}
+
+# Accounts something on the box runs as. Name pattern catches SQL-login-only accounts (no service uses them).
+$script:CpServiceNameRe = '^(svc|sql|iis|srv|service|app|web)[_.-]|[_.-](svc|service)$'
+function Get-CpServiceAccounts {
+    param([string[]]$AllUsers = @(), [switch]$IsDC)
+    $raw = @()
+    # (scheduled-task users are NOT counted: planted backdoor tasks often run as the hacker account)
+    $raw += Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | ForEach-Object StartName
+    $cfg = "$env:windir\System32\inetsrv\config\applicationHost.config"
+    if (Test-Path $cfg) {
+        try { $raw += ([xml](Get-Content $cfg -Raw)).SelectNodes('//applicationPools/add/processModel[@userName]') | ForEach-Object { $_.userName } } catch { }
+    }
+    if ($IsDC) { $raw += Get-ADUser -Filter 'ServicePrincipalName -like "*"' -ErrorAction SilentlyContinue | ForEach-Object SamAccountName }
+    $names = @($raw | ForEach-Object { ConvertTo-CpSamName $_ } | Where-Object { $_ })
+    $names += @($AllUsers | Where-Object { $_ -match $script:CpServiceNameRe })
+    return ,@($names | Sort-Object -Unique)
 }
 
 # ADSI fallback: works even when the group holds an orphaned SID (Get-LocalGroupMember then throws).
@@ -95,8 +128,9 @@ function Invoke-CpModUsers {
     Write-Host "  users in config  : $($Config.Users -join ' ')"
     Write-Host "  local users      : $($s.LocalUsers -join ' ')"
     Write-Host "  Administrators   : $($s.Admins -join ' ')"
+    $svc = Get-CpServiceAccounts -AllUsers $s.LocalUsers
     $plan = Get-CpUserPlan -Config $Config -CurrentUser $env:USERNAME -LocalUsers $s.LocalUsers -Admins $s.Admins `
-        -DisabledUsers $s.DisabledUsers -NoPasswordRequired $s.NoPasswordRequired -NeverExpires $s.NeverExpires
+        -DisabledUsers $s.DisabledUsers -NoPasswordRequired $s.NoPasswordRequired -NeverExpires $s.NeverExpires -ServiceAccounts $svc
     if ($plan.Count -eq 0) { Write-CpOk 'accounts already match the README' }
     $pw = $null
     if ($Config.NewPassword) { $pw = ConvertTo-SecureString $Config.NewPassword -AsPlainText -Force }
@@ -117,6 +151,8 @@ function Invoke-CpModUsers {
                 if (-not $pw) { Add-CpFinding users "$n may have no password - set one by hand"; continue }
                 Invoke-CpAction users "set password for $n + require one" 'account allowed to have no password' { Set-LocalUser -Name $n -Password $pw -ErrorAction Stop; & net.exe user $n /passwordreq:yes | Out-Null }.GetNewClosure() }
             'PasswordNeverExpiresOff' { Invoke-CpAction users "make $n's password expire" "'password never expires' is scored" { Set-LocalUser -Name $n -PasswordNeverExpires $false -ErrorAction Stop }.GetNewClosure() }
+            'KeepServiceAccount' { Add-CpFinding users "$n is not in the README but looks like a SERVICE ACCOUNT (runs a service or IIS app pool, or svc_ name) - kept. Delete by hand only if nothing uses it" }
+            'KeepServiceAdmin'   { Add-CpFinding users "service account $n is in Administrators - kept (removing can stop its service). Check the README" }
         }
     }
     # Report-only: other privileged local groups

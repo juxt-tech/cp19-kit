@@ -21,3 +21,16 @@ When the list is empty, the loop runs a discovery pass (shellcheck, PSScriptAnal
 - [x] shellcheck every `.sh` (docker `koalaman/shellcheck`); fix real warnings. **Done:** clean at warning level; `.shellcheckrc` documents the cross-file false positives; fixed `ls | grep` in persistence. Found + fixed a real bug: creating a README user ran `sh -c "... echo '$u:$PASS'"`, so a `'` in NEW_PASSWORD broke it (and was shell injection) -> `_add_user` with printf (unit test).
 - [x] PSScriptAnalyzer every `.ps1`/`.psm1`; fix real warnings. **Done (in a pwsh container, host untouched):** errors are by design (plaintext config password -> SecureString); fixed dead `$wl` and a null comparison. Rest = style (Write-Host is the UI).
 - [ ] Windows end-to-end: audit, then apply, on a Win11 / Server 2022 practice VM. **Needs Sanh** (VM + snapshot); the loop skips it and leaves it here.
+
+## Practice-image answer keys (2026-10-29, docs/research.md section 7)
+- [x] **Penalty fix:** Users/Server deleted every non-README account, including service accounts (District 13: `svc_iis_caseportal` -5). **Done:** accounts used by a service, IIS app pool, SPN, or named `svc_*`/`sql_*`/`*_svc` are kept + reported, never deleted or demoted (scheduled-task users not counted: backdoor tasks run as the hacker).
+- [x] Services: DHCP Client, Server (LanmanServer) must be Automatic; DHCP/Event Log/Server/Firewall/BFE/Defender must also be *running* (an "Automatic but stopped" plant was missed). wuauserv excluded from the running check (it idles).
+- [x] SecurityOptions: insecure guest logons off, SmartScreen Warn, AutoPlay off, WDigest off (registry, via new `Invoke-CpRegistrySettings`), DEP OptOut via bcdedit (skipped when BitLocker is on).
+- [x] User rights: a plain account holding *Log on as a service / batch job* is reported.
+- [x] Defender: threat default actions Allow/NoAction/UserDefined -> Quarantine; matching `ThreatSeverityDefaultAction` policy values removed.
+- [x] Remote (KEEP_RDP): GP copies of NLA / SSL / High encryption + secure RPC + always prompt for password.
+- [x] Shares: SMB minimum dialect 3.1.1 where the OS supports it (Win11 24H2 / Server 2025).
+- [x] Media: sees HIDDEN files (Get-ChildItem without -Force never did), flags plaintext credit cards (Luhn) / SSNs in text files, skips the kit's own folder.
+- [x] Persistence: SilentProcessExit, AppInit_DLLs, WMI event consumers, swapped accessibility binaries, script tasks hidden under `\Microsoft\`, drivers loaded from outside Windows, mimidrv. C:\ binary search 450s -> 78s on a big disk (`Find-CpFiles`).
+- [x] Checklist: Firefox items, folder ACLs, RDP/WinRM group members, ASR, signed-elevation, District 13 penalties.
+- [ ] Run against a real practice image (Sanh downloads it; then audit -> one module at a time -> score report).

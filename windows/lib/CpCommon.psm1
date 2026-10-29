@@ -159,6 +159,58 @@ function Invoke-CpAction {
     }
 }
 
+# Registry settings outside secedit's reach. Wanted = objects with Path (HKLM:\...), Name, Type, Value, Why.
+# Pure: Current = @{ 'Path\Name' = value-or-$null }. Returns the items whose value differs.
+function Get-CpRegistryPlan {
+    param([Parameter(Mandatory)]$Wanted, [Parameter(Mandatory)][hashtable]$Current)
+    $out = @()
+    foreach ($w in $Wanted) {
+        $cur = $Current["$($w.Path)\$($w.Name)"]
+        if ($null -ne $cur -and "$cur" -eq "$($w.Value)") { continue }
+        $out += $w
+    }
+    return ,$out
+}
+
+function Invoke-CpRegistrySettings {
+    param([string]$Module, [Parameter(Mandatory)]$Wanted)
+    $cur = @{}
+    foreach ($w in $Wanted) { $cur["$($w.Path)\$($w.Name)"] = (Get-ItemProperty -Path $w.Path -Name $w.Name -ErrorAction SilentlyContinue).($w.Name) }
+    $plan = Get-CpRegistryPlan -Wanted $Wanted -Current $cur
+    foreach ($w in $Wanted) { if ($plan -notcontains $w) { Write-CpOk "$($w.Name) = $($w.Value)" } }
+    foreach ($w in $plan) {
+        $p = $w.Path; $n = $w.Name; $t = $w.Type; $v = $w.Value
+        $now = $cur["$p\$n"]; if ($null -eq $now) { $now = '(not set)' }
+        Invoke-CpAction $Module "$n -> $v (now $now)  [$($p -replace '^HKLM:\\','HKLM\')]" $w.Why {
+            Backup-CpRegistry ($p -replace '^HKLM:\\','HKLM\')
+            if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }
+            Set-ItemProperty -Path $p -Name $n -Value $v -Type $t -ErrorAction Stop }.GetNewClosure()
+    }
+}
+
+# Fast recursive file search. Get-ChildItem -Recurse -Include over C:\ took 7+ minutes; this walks
+# directories itself, sees hidden files, skips junctions (no loops) and unreadable folders.
+function Find-CpFiles {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$NameRegex, [string]$SkipDirRegex = '^$')
+    $stack = New-Object System.Collections.Generic.Stack[string]; $stack.Push($Root)
+    $re = New-Object regex $NameRegex, 'IgnoreCase'; $skip = New-Object regex $SkipDirRegex, 'IgnoreCase'
+    while ($stack.Count) {
+        $d = $stack.Pop()
+        try { foreach ($f in [IO.Directory]::EnumerateFiles($d)) { if ($re.IsMatch([IO.Path]::GetFileName($f))) { $f } } } catch { }
+        try {
+            foreach ($s in [IO.Directory]::EnumerateDirectories($d)) {
+                if ($skip.IsMatch($s)) { continue }
+                if (([IO.File]::GetAttributes($s) -band [IO.FileAttributes]::ReparsePoint)) { continue }
+                $stack.Push($s)
+            }
+        } catch { }
+    }
+}
+
+function New-CpReg([string]$Path, [string]$Name, $Value, [string]$Why, [string]$Type = 'DWord') {
+    [pscustomobject]@{ Path = $Path; Name = $Name; Type = $Type; Value = $Value; Why = $Why }
+}
+
 function Write-CpOk([string]$Text) { Write-Host "  ok   $Text" -ForegroundColor DarkGray }
 function Write-CpHeader([string]$Text) { Write-Host ''; Write-Host "===== $Text =====" -ForegroundColor White }
 
