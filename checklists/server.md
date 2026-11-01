@@ -1,6 +1,6 @@
 # Windows Server 2019/2022 Checklist (CyberPatriot 19)
 
-> **Windows status:** the Windows/Server script passes 143 unit tests but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
+> **Windows status:** the Windows/Server script passes 165 unit tests and has been partly run on the District 13 practice image (audit + 4 of 10 modules applied), but **never on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
 
 **Do everything in [`windows.md`](windows.md) first.** It's the same kit; the menu adds a **Server** module automatically. This file covers the extras. **Click a section to open it.**
 

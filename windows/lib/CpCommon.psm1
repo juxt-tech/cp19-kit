@@ -7,7 +7,17 @@
 $script:CpApply = $false
 $script:CpYes   = $false
 $script:CpRun   = $null
-$script:ScoringRe = 'cyberpatriot|cpscor|scoring|aeacus'
+# Scoring engines: CyberPatriot (CCSClient) and Aeacus practice images (CSSClient, phocus.exe in C:\aeacus).
+$script:ScoringRe = 'cyberpatriot|cpscor|scoring|aeacus|ccsclient|cssclient|phocus'
+function Get-CpScoringRegex { $script:ScoringRe }
+
+# True if a file can be created in Dir. Planted images break TEMP so DISM/installers fail.
+function Test-CpWritableDir([string]$Dir) {
+    if (-not $Dir -or -not (Test-Path $Dir -PathType Container)) { return $false }
+    $f = Join-Path $Dir ("cpkit-" + [guid]::NewGuid().ToString('N'))
+    # DISM makes a GUID *subfolder*, so test a folder too, not just a file
+    try { [IO.File]::WriteAllText("$f.tmp", 'x'); Remove-Item "$f.tmp" -Force; [void][IO.Directory]::CreateDirectory($f); Remove-Item $f -Force; return $true } catch { return $false }
+}
 $script:BuiltinUsers = @('Administrator','Guest','DefaultAccount','WDAGUtilityAccount','defaultuser0','krbtgt')
 
 function Set-CpContext {
@@ -130,9 +140,12 @@ function Backup-CpFile {
 function Backup-CpRegistry {
     param([Parameter(Mandatory)][string]$Key)   # e.g. HKLM\SYSTEM\CurrentControlSet\Control\Lsa
     if (-not $script:CpRun) { return }
+    # A key that doesn't exist yet (new policy keys) has nothing to back up. reg.exe would exit 1 and
+    # Invoke-CpAction would log the change as FAILED although it worked (District 13 live run).
+    if (-not (Test-Path "Registry::$Key")) { return }
     $dir = Join-Path $script:CpRun 'backup\registry'; New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $file = Join-Path $dir (($Key -replace '[\\:]','_') + '.reg')
-    if (-not (Test-Path $file)) { & reg.exe export $Key $file /y 2>$null | Out-Null }
+    if (-not (Test-Path $file)) { & reg.exe export $Key $file /y 2>$null | Out-Null; $global:LASTEXITCODE = 0 }
 }
 
 function Confirm-Cp {

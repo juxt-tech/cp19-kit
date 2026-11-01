@@ -133,3 +133,77 @@ Describe 'Media scan sees hidden files and skips the kit itself' {
     }
     Remove-Item $root -Recurse -Force
 }
+
+# ---- Live run on the District 13 image (2026-10-31): bugs the real image exposed ----
+. (Join-Path $kit 'modules\Server.ps1')
+
+Describe 'District 13 live: scoring engine protected (CSSClient / phocus.exe)' {
+    It 'CSSClient counts as a scoring service' { Test-CpProtectedService -Name 'CSSClient' -Config $cfg | Should Be $true }
+    It 'CCSClient (real CyberPatriot) too'     { Test-CpProtectedService -Name 'CCSClient' -Config $cfg | Should Be $true }
+    It 'scoring tasks are tagged leave-alone'  { Get-CpTaskVerdict -Name 'CSSClient Restarter' -Action 'C:\aeacus\CSSClient_Restarter.bat' | Should Match 'SCORING' }
+}
+
+Describe 'District 13 live: disguised scheduled tasks' {
+    It 'flags GooseDesktop hidden in an Edge-named task' {
+        Get-CpTaskVerdict -Name 'MicrosoftEdgeUpdateTaskMachineMain' -Action 'C:\inetpub\wwwroot\aspnet_client\system_web\4_0_30418\GooseDesktop.exe ' | Should Match 'DISGUISED'
+    }
+    It 'trusts the real Edge updater'   { Get-CpTaskVerdict -Name 'MicrosoftEdgeUpdateTaskMachineCore' -Action 'C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe /c' | Should Be '' }
+    It 'trusts a quoted Program Files path' { Get-CpTaskVerdict -Name 'GoogleUpdaterTaskSystem' -Action '"C:\Program Files (x86)\Google\GoogleUpdater\updater.exe" --wake --system' | Should Be '' }
+    It 'flags a hidden PowerShell from Downloads' { Get-CpTaskVerdict -Name 'autoroblux' -Action 'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\beetee\Downloads\freeroblux.ps1"' | Should Match 'SUSPICIOUS' }
+}
+
+Describe 'District 13 live: media report collapses big asset folders' {
+    $mk = { param($p, $h) [pscustomobject]@{ FullName = $p; Length = 2048; Attributes = $(if ($h) { [IO.FileAttributes]::Hidden } else { [IO.FileAttributes]::Normal }) } }
+    $goose = 1..20 | ForEach-Object { & $mk "C:\inetpub\x\Memes\Meme$_.png" $true }
+    $lines = Get-CpMediaLines -Files (@($goose) + @(& $mk 'C:\Users\Public\Downloads\jump-scare.png' $true))
+    It 'one line for the 20-file folder' { @($lines | Where-Object { $_ -match '^folder: C:\\inetpub\\x\\Memes .*20 media files \(20 HIDDEN\)' }).Count | Should Be 1 }
+    It 'single files still listed with HIDDEN' { @($lines | Where-Object { $_ -match 'jump-scare\.png.*HIDDEN' }).Count | Should Be 1 }
+    It 'two lines total' { $lines.Count | Should Be 2 }
+}
+
+Describe 'District 13 live: roles guessed from services when DISM is broken' {
+    It 'DC + DNS + IIS + ADCS' { (Get-CpRolesFromServices -Services @('NTDS','DNS','W3SVC','CertSvc','Spooler')) -join ',' | Should Be 'AD-Domain-Services,DNS,Web-Server,AD-Certificate' }
+}
+
+Describe 'District 13 live: Log on as a service held by service accounts is not "remove"' {
+    $inf = "[Privilege Rights]`r`nSeServiceLogonRight = svc_iis_caseportal,SQLServer2005SQLBrowserUser`$WIN-X,hacker`r`nSeDenyNetworkLogonRight = Guest"
+    $f = @(Get-CpUserRightsFindings -InfText $inf -ServiceAccounts @('svc_iis_caseportal')) -join "`n"
+    It 'keeps the caseportal service account' { $f | Should Not Match 'svc_iis_caseportal' }
+    It 'skips $-named groups'                  { $f | Should Not Match 'SQLServer2005' }
+    It 'still flags hacker'                    { $f | Should Match 'hacker' }
+}
+
+Describe 'District 13 live: broken TEMP detection' {
+    It 'missing dir is not writable' { Test-CpWritableDir 'C:\no\such\dir\cpkit' | Should Be $false }
+    It 'real temp is writable'       { Test-CpWritableDir $env:TEMP | Should Be $true }
+}
+
+Describe 'District 13 live: plan functions iterate per item (Defender crash)' {
+    It 'assigning a ,$out result then foreach gives strings, not one array' {
+        $plan = Get-CpDefenderPolicyPlan -Values @{ 'Exclusions\Paths\C:\x' = 0; 'DisableAntiSpyware' = 1 }
+        $types = foreach ($p in $plan) { $p.GetType().Name }
+        ($types | Select-Object -Unique) -join ',' | Should Be 'String'
+    }
+}
+
+Describe 'District 13 live #2: never remove the scoring engine''s Defender exclusion' {
+    It 'keeps Exclusions\Paths\C:\aeacus\phocus.exe, removes others' {
+        $p = Get-CpDefenderPolicyPlan -Values @{ 'Exclusions\Paths\C:\aeacus\phocus.exe' = 0; 'Exclusions\Paths\C:\evil' = 0; 'DisableAntiSpyware' = 1 }
+        ($p | Sort-Object) -join ',' | Should Be 'DisableAntiSpyware,Exclusions\Paths\C:\evil'
+    }
+    It 'role guess returns plain names (was printed as System.Object[])' {
+        $roles = Get-CpRolesFromServices -Services @('NTDS','DNS')
+        "$($roles -join ', ')" | Should Be 'AD-Domain-Services, DNS'
+    }
+}
+
+Describe 'District 13 live #3: backing up a missing registry key is not a failure' {
+    It 'leaves LASTEXITCODE at 0 and makes no file' {
+        $run = Join-Path $env:TEMP "cpkit-bk-$PID"; Set-CpContext -RunDir $run
+        $global:LASTEXITCODE = 0
+        Backup-CpRegistry 'HKCU\Software\cpkit-does-not-exist-12345'
+        $global:LASTEXITCODE | Should Be 0
+        Test-Path (Join-Path $run 'backup\registry') | Should Be $false
+        Set-CpContext; Remove-Item $run -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}

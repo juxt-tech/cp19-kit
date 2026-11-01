@@ -1,6 +1,6 @@
 # Windows 10/11 Checklist (CyberPatriot 19)
 
-> **Windows status:** the Windows/Server script passes 143 unit tests and was checked against four public practice-image answer keys (District 13, L'Équipe du Dictateur, Cincinnati Zoo, Princeton-Plainsboro), but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from this checklist.
+> **Windows status:** the Windows/Server script passes 165 unit tests, was checked against four public practice-image answer keys (District 13, L'Équipe du Dictateur, Cincinnati Zoo, Princeton-Plainsboro) and partly run on the District 13 image (audit + 4 of 10 modules applied), but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from this checklist.
 
 **Order:** 0 Setup → 1 Forensics → 2 Audit → 3 Apply → 4 Findings → 5 Manual → 6 Don'ts. **Click a section to open it.** Snapshot before every numbered section.
 
@@ -59,7 +59,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 | 4 | SecurityOptions | UAC on + secure desktop, no anonymous SAM/share enumeration, NTLMv2 only, no LM hash, SMB signing, CTRL+ALT+DEL, don't show last user, lock after 15 min idle, no shutdown from the logon screen; insecure guest logons off, SmartScreen = Warn, AutoPlay off, WDigest off, DEP for all programs (skipped if BitLocker is on); **reports** risky User Rights Assignment entries (incl. a plain user with *Log on as a service*) | Local Policies |
 | 5 | Firewall | all 3 profiles on, block inbound, allow outbound, notify, no unicast response | Defensive Countermeasures |
 | 6 | Defender | real-time, PUA, cloud on; **removes exclusions** (CP19 had a `.exe` exclusion); threat default actions "Allow / No action" → Quarantine; updates signatures; quick scan | Defensive Countermeasures |
-| 7 | Services | disables RemoteRegistry, Telnet, SNMP, Simple TCP/IP (`simptcp`), FTP/IIS (unless critical), UPnP, Xbox, etc.; Windows Update automatic; DHCP Client, Event Log, Server, Firewall, BFE **automatic and running** | Service Auditing |
+| 7 | Services | disables RemoteRegistry, Telnet, SNMP, Simple TCP/IP (`simptcp`), FTP/IIS (unless critical), UPnP, Xbox, etc.; Windows Update automatic; DHCP Client, Event Log, Server, Firewall, BFE **automatic and running**. `KEEP_RDP=no`: the RDP services are set Disabled but **not stopped** (stopping TermService freezes the console); they stop at the next reboot | Service Auditing |
 | 8 | Remote | RDP off (or ON + NLA + TLS + secure RPC, also as Group Policy, if `KEEP_RDP=yes`); Remote Assistance off | Uncategorized OS Settings |
 | 9 | Shares | removes non-default shares (lists access first; never admin or role shares); SMBv1 off; SMB signing; SMB minimum 3.1.1 (Win11 24H2 / Server 2025 only) | Uncategorized OS Settings |
 | 10 | Features | Telnet client, TFTP, SMB1, PowerShell v2 off | Uncategorized OS Settings |

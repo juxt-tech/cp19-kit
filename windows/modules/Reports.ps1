@@ -80,32 +80,64 @@ function Get-CpPiiKinds([string]$Text) {
     return ,$out
 }
 
+# Pure. Files = objects with FullName, Length, Attributes. One line per file, except a folder with
+# more than $Max media files becomes ONE line (District 13: GooseDesktop's 50 asset images).
+function Get-CpMediaLines {
+    param($Files = @(), [int]$Max = 8)
+    $out = @()
+    foreach ($g in @($Files | Group-Object { Split-Path $_.FullName -Parent })) {
+        $hid = @($g.Group | Where-Object { $_.Attributes -band [IO.FileAttributes]::Hidden }).Count
+        if ($g.Count -gt $Max) {
+            $eg = ($g.Group | Select-Object -First 3 | ForEach-Object { Split-Path $_.FullName -Leaf }) -join ', '
+            $out += "folder: $($g.Name)  has $($g.Count) media files$(if ($hid) { " ($hid HIDDEN)" }), e.g. $eg  (program assets? malware folder? check it)"
+            continue
+        }
+        foreach ($f in $g.Group) {
+            $out += "file: $($f.FullName)  ($([math]::Round($f.Length/1KB))KB)$(if ($f.Attributes -band [IO.FileAttributes]::Hidden) { '  HIDDEN' })"
+        }
+    }
+    return ,$out
+}
+
 function Invoke-CpModMedia {
     param($Config)
     Write-CpHeader 'MEDIA / PROHIBITED FILES  (report only)'
     $mediaRe = '\.(mp3|mp4|avi|mkv|mov|wav|flac|ogg|m4a|wma|aac|wmv|flv|webm|jpg|jpeg|png|gif|zip|7z|rar|tar|gz|kdbx|pcap|pcapng)$'
     $suspRe  = 'password|passwd|secret|credit|\.(exe|msi|bat|vbs|ps1|hta|scr)$'
     $textRe  = '\.(txt|csv|log|rtf|md|xml|json|ini|dat|bak)$'
-    $roots = @('C:\Users') + @(Get-ChildItem 'C:\' -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(Windows|Program Files.*|ProgramData|Users|PerfLogs|Recovery|\$.*|System Volume Information|cpkit-runs|Config\.Msi|Documents and Settings)$' } | ForEach-Object FullName)
+    $roots = @('C:\Users') + @(Get-ChildItem 'C:\' -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(Windows|Program Files.*|ProgramData|Users|PerfLogs|Recovery|\$.*|System Volume Information|cpkit-runs|Config\.Msi|Documents and Settings)$' -and $_.Name -notmatch (Get-CpScoringRegex) } | ForEach-Object FullName)
     # Find-CpFiles sees HIDDEN files (CP plants them with attrib +h; plain Get-ChildItem misses them).
     # AppData is skipped: browser caches are full of images and nobody scores them.
     $kitRoot = Split-Path (Split-Path $PSScriptRoot)   # don't report the kit's own scripts / its download zip
-    $skipDir = '\\AppData$|\\node_modules$|\\\.git$|^' + [regex]::Escape($kitRoot) + '$'
+    # never list the scoring engine's own files (C:\aeacus\assets\*.png, *.wav): deleting them breaks scoring
+    $skipDir = '\\AppData$|\\node_modules$|\\\.git$|\\WindowsPowerShell\\Modules$|\\(' + (Get-CpScoringRegex) + ')[^\\]*$|^' + [regex]::Escape($kitRoot) + '$'
     $n = 0
     $files = foreach ($r in $roots) {
         Find-CpFiles -Root $r -NameRegex "$mediaRe|$suspRe|$textRe" -SkipDirRegex $skipDir | Where-Object { [IO.Path]::GetFileName($_) -notlike 'cp19-kit*' } | ForEach-Object { New-Object IO.FileInfo $_ }
     }
     $tag = { param($f) if ($f.Attributes -band [IO.FileAttributes]::Hidden) { '  HIDDEN' } else { '' } }
+    $mediaLines = Get-CpMediaLines -Files @($files | Where-Object { $_.Name -match $mediaRe })
+    foreach ($line in $mediaLines) { Add-CpFinding media $line; $n++ }
     foreach ($f in $files) {
-        if ($f.Name -match $mediaRe) { Add-CpFinding media "file: $($f.FullName)  ($([math]::Round($f.Length/1KB))KB)$(& $tag $f)"; $n++ }
-        elseif ($f.FullName -match '^C:\\Users\\' -and $f.Name -match $suspRe -and $f.Name -ne 'desktop.ini') { Add-CpFinding media "suspicious file: $($f.FullName)$(& $tag $f)"; $n++ }
-        # plaintext card numbers / SSNs ("unencrypted medical records", "hidden file with credit cards")
-        if ($f.Name -match $textRe -and $f.Length -lt 2MB) {
+        if ($f.Name -notmatch $mediaRe -and $f.FullName -match '^C:\\Users\\' -and $f.Name -match $suspRe -and $f.Name -ne 'desktop.ini') { Add-CpFinding media "suspicious file: $($f.FullName)$(& $tag $f)"; $n++ }
+        # plaintext card numbers / SSNs ("unencrypted medical records", "hidden file with credit cards"); license texts are full of numbers
+        if ($f.Name -match $textRe -and $f.Name -notmatch '(?i)license|eula|notice|readme' -and $f.Length -lt 2MB) {
             $kinds = @(); try { $kinds = Get-CpPiiKinds ([IO.File]::ReadAllText($f.FullName)) } catch { }
             if ($kinds.Count) { Add-CpFinding media "plaintext $($kinds -join ' + ') in: $($f.FullName)$(& $tag $f)  (forensics first, then delete)"; $n++ }
         }
     }
     Write-Host "  $n file(s) listed in findings.txt"
+}
+
+# Pure. A tag for a scheduled-task finding line. District 13 hid GooseDesktop.exe in a task named
+# MicrosoftEdgeUpdateTaskMachineMain; the scoring engine's own tasks must be left alone.
+function Get-CpTaskVerdict([string]$Name, [string]$Action) {
+    if ("$Name $Action" -match (Get-CpScoringRegex)) { return '   <- SCORING ENGINE, leave it alone' }
+    $exe = ($Action -replace '^\s*"?([^"]+?\.(exe|bat|cmd|ps1|vbs|js))"?.*$', '$1')
+    $trusted = $exe -match '(?i)^(%systemroot%|%windir%|C:\\Windows\\|C:\\Program Files)'
+    if ($Name -match '(?i)microsoft|edge|google|windows|update|onedrive|adobe' -and -not $trusted) { return '   <- DISGUISED: named like a vendor task but runs from a non-system folder' }
+    if ($Action -match '(?i)\\Users\\|\\Temp\\|\\inetpub\\|\\Public\\|-enc|encodedcommand|http[s]?://|-WindowStyle\W+Hidden') { return '   <- SUSPICIOUS location/flags' }
+    return ''
 }
 
 function Invoke-CpModPersistence {
@@ -123,7 +155,7 @@ function Invoke-CpModPersistence {
     }
     Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notmatch '^\\Microsoft\\' -and $_.State -ne 'Disabled' } | ForEach-Object {
         $a = ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
-        Add-CpFinding persistence "scheduled task $($_.TaskPath)$($_.TaskName) [$($_.Author)]: $a"
+        Add-CpFinding persistence "scheduled task $($_.TaskPath)$($_.TaskName) [$($_.Author)]: $a$(Get-CpTaskVerdict -Name $_.TaskName -Action $a)"
     }
     $w = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -ErrorAction SilentlyContinue
     if ($w.Userinit -notmatch '^C:\\Windows\\system32\\userinit\.exe,?$') { Add-CpFinding persistence "Winlogon Userinit tampered: $($w.Userinit)" }
@@ -139,7 +171,8 @@ function Invoke-CpModPersistence {
     } | Sort-Object Port -Unique
     if ($ctx.RunDir) { $listen | Format-Table -AutoSize | Out-String -Width 250 | Set-Content (Join-Path $ctx.RunDir 'listening.txt') -Encoding ASCII; Write-Host "  listening ports: $(Join-Path $ctx.RunDir 'listening.txt')" }
     $listen | Where-Object { $_.Path -and $_.Path -notmatch '(?i)\\Windows\\|\\Program Files' } | ForEach-Object { Add-CpFinding persistence "listener on port $($_.Port): $($_.Process) $($_.Path)  (backdoor? forensics often asks the port)" }
-    Find-CpFiles -Root 'C:\' -NameRegex '^(nc|nc64|ncat|netcat|bd)\.exe$|backdoor|keylog|^mimi(katz|drv|lib)|^psexec' -SkipDirRegex '\\Windows\\WinSxS$|\\cpkit-runs$' |
+    # generic words only count on runnable files (Nmap ships *backdoor*.nse scripts that are just detection rules)
+    Find-CpFiles -Root 'C:\' -NameRegex '^(nc|nc64|ncat|netcat|bd)\.exe$|(backdoor|keylog).*\.(exe|dll|sys|ps1|bat|cmd|vbs|js|hta|scr)$|^mimi(katz|drv|lib)|^psexec' -SkipDirRegex '\\Windows\\WinSxS$|\\cpkit-runs$' |
         ForEach-Object { Add-CpFinding persistence "suspicious binary: $_" }
 
     # --- less obvious spots (persistence-themed practice images) ---
@@ -163,7 +196,8 @@ function Invoke-CpModPersistence {
     # tasks hidden under \Microsoft\ that run scripts from user-writable places
     Get-ScheduledTask -TaskPath '\Microsoft\*' -ErrorAction SilentlyContinue | Where-Object State -ne 'Disabled' | ForEach-Object {
         $a = ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
-        if ($a -match '(?i)\\Users\\|\\Temp\\|\\Public\\|-enc|encodedcommand|http[s]?://|mshta|wscript|cscript|regsvr32 /s /i') { Add-CpFinding persistence "suspicious Microsoft-folder task $($_.TaskPath)$($_.TaskName): $a" }
+        # (no plain cscript/wscript: Windows' own CleanupOldPerfLogs task uses cscript on a System32 .vbs)
+        if ($a -match '(?i)\\Users\\|\\Temp\\|\\Public\\|\\inetpub\\|-enc|encodedcommand|http[s]?://|mshta|regsvr32 /s /i') { Add-CpFinding persistence "suspicious Microsoft-folder task $($_.TaskPath)$($_.TaskName): $a" }
     }
     # drivers loaded from outside Windows (mimikatz mimidrv, rootkits)
     Get-CimInstance Win32_SystemDriver -ErrorAction SilentlyContinue | Where-Object { $_.PathName -and $_.PathName -notmatch '(?i)\\Windows\\|\\Program Files|^\\SystemRoot\\|^System32\\' } |

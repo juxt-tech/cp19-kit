@@ -46,6 +46,17 @@ $run = Join-Path 'C:\cpkit-runs' (Get-Date -Format 'yyyyMMdd-HHmmss')
 if (Test-Path $run) { $run = "$run-$PID" }
 Set-CpContext -RunDir $run -Apply:$Apply -Yes:$Yes
 
+# District 13 broke the TEMP folders: every DISM call (features, SMB1, roles) then throws.
+# Give this run a working TEMP and report the broken ones (fixing them is often scored).
+$tempIssues = @()
+if (-not (Test-CpWritableDir $env:TEMP)) {
+    $tempIssues += "your TEMP folder ($env:TEMP) is missing or not writable - DISM, Server Manager and installers fail. Recreate it: New-Item -ItemType Directory -Force '$env:TEMP'"
+    $env:TEMP = Join-Path $run 'tmp'; $env:TMP = $env:TEMP; New-Item -ItemType Directory -Force $env:TEMP | Out-Null
+}
+if (-not (Test-CpWritableDir "$env:windir\Temp")) {
+    $tempIssues += "C:\Windows\Temp is missing or not writable (Get-WindowsFeature / Server Manager fail). Check: icacls C:\Windows\Temp   Fix: icacls C:\Windows\Temp /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F'"
+}
+
 $order = [ordered]@{
     Users           = @{ Fn = { Invoke-CpModUsers -Config $cfg -IsDC:$isDC };          What = 'accounts + Administrators match README; disable Guest/Administrator' }
     AccountPolicy   = @{ Fn = { Invoke-CpModAccountPolicy -Config $cfg -IsDC:$isDC };  What = 'password length/age/history/complexity; lockout 5 / 30 min' }
@@ -76,6 +87,7 @@ foreach ($m in $crit.Missing) {
     Add-CpFinding services "critical service '$m' from cp-config.txt not found on this machine - nothing protects it"
 }
 if ($rdpForced) { Write-Host '   NOTE: Remote Desktop is a critical service, so KEEP_RDP was treated as yes.' -ForegroundColor Yellow }
+foreach ($t in $tempIssues) { Add-CpFinding system $t }
 Write-Host " running as: $env:USERNAME   run dir: $run"
 Write-Host '================================================================'
 if ($Apply -and -not $Yes) {

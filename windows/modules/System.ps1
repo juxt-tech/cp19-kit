@@ -19,13 +19,18 @@ $script:CpNeverTouch = @('Dnscache','RpcSs','LSM','LanmanWorkstation','Netlogon'
 function Get-CpServicePlan {
     param([Parameter(Mandatory)]$Services, [Parameter(Mandatory)]$Config)
     $bad = @($script:CpBadServices)
-    if (-not $Config.KeepRdp) { $bad += $script:CpRdpServices }
     $plan = New-Object System.Collections.Generic.List[object]
     foreach ($s in $Services) {
         $n = [string]$s.Name
         if ($script:CpNeverTouch -contains $n) { continue }
         if (Test-CpProtectedService -Name $n -Config $Config) {
             if ($bad -contains $n -or $script:CpRdpServices -contains $n) { $plan.Add([pscustomobject]@{ Action='KeepCritical'; Name=$n }) }
+            continue
+        }
+        # TermService also runs the LOCAL console session: stopping it live freezes keyboard/mouse
+        # (District 13). The Remote module's fDenyTSConnections=1 blocks RDP at once; the service stops at reboot.
+        if (-not $Config.KeepRdp -and $script:CpRdpServices -contains $n) {
+            if ([string]$s.StartType -ne 'Disabled') { $plan.Add([pscustomobject]@{ Action='DisableOnReboot'; Name=$n }) }
             continue
         }
         if ($bad -contains $n -and ([string]$s.StartType -ne 'Disabled' -or [string]$s.Status -eq 'Running')) {
@@ -50,6 +55,7 @@ function Invoke-CpModServices {
         switch ($a.Action) {
             'KeepCritical' { Write-CpOk "$n ($dn) kept - README critical" }
             'Disable'      { Invoke-CpAction services "stop + disable $n ($dn)" 'risky service not required by README' { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue; Set-Service -Name $n -StartupType Disabled -ErrorAction Stop }.GetNewClosure() }
+            'DisableOnReboot' { Invoke-CpAction services "disable $n ($dn) - stops at next reboot" 'RDP not required by README; a live stop freezes the console' { Set-Service -Name $n -StartupType Disabled -ErrorAction Stop }.GetNewClosure() }
             'EnableAuto'   {
                 # wuauserv may legitimately stay stopped until needed; the others must really start
                 $ea = if ($script:CpMustBeRunning -contains $n) { 'Stop' } else { 'SilentlyContinue' }
@@ -103,6 +109,8 @@ function Get-CpDefenderPolicyPlan {
     $out = @()
     foreach ($k in $Values.Keys) {
         $leaf = ($k -split '\\')[-1]
+        # District 13 excludes C:\aeacus\phocus.exe: removing that lets Defender quarantine the scoring engine
+        if ($k -match (Get-CpScoringRegex)) { continue }
         if ($k -like 'Exclusions\*') { $out += $k; continue }
         if ($leaf -like 'Disable*' -and "$($Values[$k])" -ne '0') { $out += $k; continue }
         # "default action for severe threats = Allow / No action" (PPTH answer key)
@@ -132,7 +140,9 @@ function Invoke-CpModDefender {
     param($Config)
     Write-CpHeader 'WINDOWS DEFENDER'
     $base = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
-    foreach ($p in Get-CpDefenderPolicyPlan -Values (Get-CpDefenderPolicyValues)) {
+    # assign first: "foreach ($x in Get-Fn)" hands a ",$out" result over as ONE array item (crashed on District 13)
+    $polPlan = Get-CpDefenderPolicyPlan -Values (Get-CpDefenderPolicyValues)
+    foreach ($p in $polPlan) {
         $sub = Split-Path $p -Parent; $name = Split-Path $p -Leaf
         $path = if ($sub) { Join-Path $base $sub } else { $base }
         Invoke-CpAction defender "delete Defender policy value $p" 'group-policy Disable*/exclusions override the Defender settings' {
@@ -141,7 +151,7 @@ function Invoke-CpModDefender {
     }
     $mp = Get-MpPreference -ErrorAction SilentlyContinue
     if (-not $mp) {
-        Add-CpFinding defender 'Defender not available. Server: Install-WindowsFeature Windows-Defender (then reboot). Third-party AV? check README.'
+        Add-CpFinding defender 'Defender not available (Get-MpPreference failed: WinDefend missing or its WMI class broken). Removed a DisableAntiSpyware policy above? reboot and re-run. Feature uninstalled (Server)? Install-WindowsFeature Windows-Defender, reboot. Third-party AV? check README.'
         return
     }
     $want = [ordered]@{ DisableRealtimeMonitoring=$false; DisableBehaviorMonitoring=$false; DisableIOAVProtection=$false;
@@ -151,12 +161,13 @@ function Invoke-CpModDefender {
         $v = $want[$k]
         Invoke-CpAction defender "Defender $k -> $v (now $($mp.$k))" 'antivirus protection must be fully on' { $h = @{ $k = $v }; Set-MpPreference @h -ErrorAction Stop }.GetNewClosure()
     }
-    foreach ($k in Get-CpThreatActionPlan -Mp $mp) {
+    $threatPlan = Get-CpThreatActionPlan -Mp $mp
+    foreach ($k in $threatPlan) {
         $name = $k
         Invoke-CpAction defender "Defender $name -> Quarantine (now $($mp.$name))" 'threats must not be allowed / ignored' { $h = @{ $name = 'Quarantine' }; Set-MpPreference @h -ErrorAction Stop }.GetNewClosure()
     }
     foreach ($t in 'ExclusionExtension','ExclusionPath','ExclusionProcess','ExclusionIpAddress') {
-        foreach ($x in @($mp.$t | Where-Object { $_ })) {
+        foreach ($x in @($mp.$t | Where-Object { $_ -and $_ -notmatch (Get-CpScoringRegex) })) {
             $type = $t; $val = $x
             Invoke-CpAction defender "remove Defender $type '$val'" 'exclusions let malware hide (CP19 scored .exe exclusion)' { $h = @{ $type = $val }; Remove-MpPreference @h -ErrorAction Stop }.GetNewClosure()
         }
@@ -211,7 +222,9 @@ function Invoke-CpModShares {
         if ("$($srv.Smb2DialectMin)" -ne 'SMB311') { Invoke-CpAction shares "SMB minimum dialect $($srv.Smb2DialectMin) -> SMB311" 'scored: SMB minimum version 3.1.1' { Set-SmbServerConfiguration -Smb2DialectMin SMB311 -Force -ErrorAction Stop } } else { Write-CpOk 'SMB minimum dialect 3.1.1' }
     }
     if (-not $srv.EncryptData) { Add-CpFinding shares 'SMB encryption off (Set-SmbServerConfiguration -EncryptData $true) - can break old clients, decide by README' }
-    $f = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction SilentlyContinue
+    $f = $null
+    try { $f = Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -ErrorAction Stop }
+    catch { Add-CpFinding shares "could not check the SMB1Protocol feature ($($_.Exception.Message.Split("`n")[0])) - check by hand in Server Manager > Features" }
     if ($f -and $f.State -eq 'Enabled') { Invoke-CpAction shares 'remove SMB1Protocol feature (reboot later)' 'SMBv1 client+server removed' { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction Stop | Out-Null } }
 }
 
@@ -273,7 +286,9 @@ function Invoke-CpModFeatures {
     param($Config)
     Write-CpHeader 'WINDOWS FEATURES'
     foreach ($f in 'TelnetClient','TFTP','SMB1Protocol','SimpleTCP','TelnetServer','IIS-FTPServer','MicrosoftWindowsPowerShellV2Root','MicrosoftWindowsPowerShellV2') {
-        $x = Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue
+        # DISM throws (not just errors) when TEMP is broken; one failure would kill the whole module
+        try { $x = Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction Stop }
+        catch { Add-CpFinding features "could not check Windows feature $f ($($_.Exception.Message.Split("`n")[0])) - check by hand: optionalfeatures.exe"; continue }
         if (-not $x -or $x.State -ne 'Enabled') { continue }
         if ($f -like 'IIS-*' -and ($Config.Critical -contains 'FTPSVC' -or $Config.Critical -contains 'W3SVC')) { Write-CpOk "$f kept (README critical)"; continue }
         $name = $f

@@ -2,10 +2,23 @@
 # and reports for roles, DNS, IIS and FTP. CP categories: User Auditing, Account Policies,
 # Application Security Settings.
 
+# Pure. Service names -> Get-WindowsFeature role names, for when DISM is broken.
+function Get-CpRolesFromServices([string[]]$Services) {
+    $map = [ordered]@{ NTDS='AD-Domain-Services'; DNS='DNS'; W3SVC='Web-Server'; CertSvc='AD-Certificate'; DHCPServer='DHCP'; FTPSVC='Web-Server' }
+    $out = @(); foreach ($k in $map.Keys) { if ($Services -contains $k -and $out -notcontains $map[$k]) { $out += $map[$k] } }
+    return ,$out
+}
+
 function Invoke-CpModServer {
     param($Config, [switch]$IsDC)
     Write-CpHeader 'SERVER  (roles, AD, DNS, IIS, FTP)'
-    $roles = @(Get-WindowsFeature -ErrorAction SilentlyContinue | Where-Object { $_.Installed -and $_.FeatureType -eq 'Role' } | ForEach-Object Name)
+    $roles = @()
+    try { $roles = @(Get-WindowsFeature -ErrorAction Stop | Where-Object { $_.Installed -and $_.FeatureType -eq 'Role' } | ForEach-Object Name) }
+    catch {
+        # District 13: broken C:\Windows\Temp makes Get-WindowsFeature throw. Guess roles from services so AD still gets audited.
+        $roles = Get-CpRolesFromServices -Services @(Get-Service | ForEach-Object Name)   # no @(): it would wrap the array again
+        Add-CpFinding server "Get-WindowsFeature failed ($($_.Exception.Message.Split("`n")[0])) - roles guessed from services: $($roles -join ', ')"
+    }
     Write-Host "  installed roles: $($roles -join ', ')"
     if ($IsDC) { Invoke-CpServerAD -Config $Config }
     if ($roles -contains 'DNS') {

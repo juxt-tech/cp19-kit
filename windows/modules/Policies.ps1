@@ -96,7 +96,7 @@ $script:CpBroadSids = @{ '*S-1-1-0'='Everyone'; '*S-1-5-32-545'='Users'; '*S-1-5
 
 # Pure. InfText = secedit export. Returns finding strings.
 function Get-CpUserRightsFindings {
-    param([Parameter(Mandatory)][string]$InfText)
+    param([Parameter(Mandatory)][string]$InfText, [string[]]$ServiceAccounts = @())
     $rights = @{}; $in = $false
     foreach ($line in ($InfText -split "`r?`n")) {
         if ($line -match '^\s*\[(.+)\]\s*$') { $in = ($Matches[1] -eq 'Privilege Rights'); continue }
@@ -116,9 +116,13 @@ function Get-CpUserRightsFindings {
                 $bad = (& $isGuest $e) -or $e -eq '*S-1-5-7' -or ($r -ne 'SeNetworkLogonRight' -and $e -eq '*S-1-1-0')
             }
             if ($bad) { $out += "user right '$name' ($r) is held by $(& $show $e) - remove it in secpol.msc > User Rights Assignment unless the README needs it"; continue }
-            # a plain user with "Log on as a service/batch job" is a planted backdoor unless it's a README service account
+            # a plain user with "Log on as a service/batch job" is a planted backdoor unless it's a service account
+            # (District 13: svc_iis_caseportal needs it - removing it breaks the scored caseportal)
             if ($r -in 'SeServiceLogonRight','SeBatchLogonRight' -and ($e -match '^\*S-1-5-21-' -or $e -notmatch '^(\*|NT SERVICE\\|IIS APPPOOL\\)')) {
-                $out += "user right '$name' ($r) is held by account $(& $show $e) - remove it unless the README names it as a service account"
+                $acct = ($e -split '\\')[-1]
+                if ($acct.Contains('$')) { continue }   # groups like SQLServer2005SQLBrowserUser$HOST, gMSAs, computers
+                if (@($ServiceAccounts | Where-Object { $_ -ieq $acct }).Count) { continue }
+                $out += "user right '$name' ($r) is held by account $(& $show $e) - remove it unless a service or the README needs that account"
             }
         }
     }
@@ -164,7 +168,9 @@ function Invoke-CpModSecurityOptions {
     Invoke-CpDep
     $inf = Export-CpSecPolicy
     if ($inf) {
-        $f = @(Get-CpUserRightsFindings -InfText $inf)
+        $isDC = (Get-CimInstance Win32_OperatingSystem).ProductType -eq 2
+        $all  = if ($isDC) { @(Get-ADUser -Filter * -ErrorAction SilentlyContinue | ForEach-Object SamAccountName) } else { @(Get-LocalUser | ForEach-Object Name) }
+        $f = @(Get-CpUserRightsFindings -InfText $inf -ServiceAccounts (Get-CpServiceAccounts -AllUsers $all -IsDC:$isDC))
         foreach ($x in $f) { Add-CpFinding userrights $x }
         if ($f.Count) { Write-Host "  !    $($f.Count) user-rights problem(s) listed in findings.txt (fix by hand in secpol.msc)" -ForegroundColor Yellow } else { Write-CpOk 'user rights: nothing risky found' }
     }
