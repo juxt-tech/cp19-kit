@@ -1,6 +1,6 @@
 # Windows 10/11 Checklist (CyberPatriot 19)
 
-> **Windows status:** the Windows/Server script passes 165 unit tests, was checked against four public practice-image answer keys (District 13, L'Équipe du Dictateur, Cincinnati Zoo, Princeton-Plainsboro) and partly run on the District 13 image (audit + 4 of 10 modules applied), but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from this checklist.
+> **Windows status:** the Windows/Server script passes 170 unit tests, was checked against four public practice-image answer keys (District 13, L'Équipe du Dictateur, Cincinnati Zoo, Princeton-Plainsboro) and partly run on the District 13 image (audit + 4 of 10 modules applied), but has **never been run on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from this checklist.
 
 **Order:** 0 Setup → 1 Forensics → 2 Audit → 3 Apply → 4 Findings → 5 Manual → 6 Don'ts. **Click a section to open it.** Snapshot before every numbered section.
 
