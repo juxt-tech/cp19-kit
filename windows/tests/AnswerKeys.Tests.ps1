@@ -197,6 +197,39 @@ Describe 'District 13 live #2: never remove the scoring engine''s Defender exclu
     }
 }
 
+Describe 'District 13 live #4: admin tools locked with Deny ACEs (dism.exe: Everyone + SYSTEM Deny)' {
+    $rule = { param($who, $type) [pscustomobject]@{ IdentityReference = $who; AccessControlType = $type } }
+    It 'lists each denied identity once' {
+        $acc = @((& $rule 'Everyone' 'Deny'), (& $rule 'NT AUTHORITY\SYSTEM' 'Deny'), (& $rule 'BUILTIN\Administrators' 'Allow'), (& $rule 'Everyone' 'Deny'))
+        (Get-CpDenyIdentities $acc) -join ',' | Should Be 'Everyone,NT AUTHORITY\SYSTEM'
+    }
+    It 'finds nothing on a normal ACL' { @(Get-CpDenyIdentities @((& $rule 'BUILTIN\Users' 'Allow'))).Count | Should Be 0 }
+    It 'checks dism.exe and the usual admin tools' {
+        $t = Get-CpAdminToolPaths
+        ($t -match '\\System32\\dism\.exe$').Count | Should Be 1
+        ($t -match 'powershell\.exe$').Count | Should BeGreaterThan 0
+        ($t -match 'regedit\.exe$').Count | Should Be 1
+    }
+    It 'removes a planted Deny entry on -Apply and logs the change' {
+        $run = Join-Path $env:TEMP "cpkit-acl-$PID"; Set-CpContext -RunDir $run -Apply -Yes
+        $f = Join-Path $env:TEMP "cpkit-acl-$PID.exe"; Set-Content $f 'x'
+        $acl = Get-Acl $f; $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule 'BUILTIN\Guests', 'ReadAndExecute', 'Deny')); Set-Acl $f $acl
+        Repair-CpToolAcls -Paths @($f) *> $null
+        @(Get-CpDenyIdentities (Get-Acl $f).Access).Count | Should Be 0
+        (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match 'ACTION \| remove Deny'
+        Set-CpContext; Remove-Item $f, $run -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    It 'only reports in audit mode' {
+        $run = Join-Path $env:TEMP "cpkit-acl2-$PID"; Set-CpContext -RunDir $run
+        $f = Join-Path $env:TEMP "cpkit-acl2-$PID.exe"; Set-Content $f 'x'
+        $acl = Get-Acl $f; $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule 'BUILTIN\Guests', 'ReadAndExecute', 'Deny')); Set-Acl $f $acl
+        Repair-CpToolAcls -Paths @($f) *> $null
+        @(Get-CpDenyIdentities (Get-Acl $f).Access).Count | Should Be 1
+        (Get-Content (Join-Path $run 'findings.txt') -Raw) | Should Match 'Deny entries for BUILTIN\\Guests'
+        Set-CpContext; Remove-Item $f, $run -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Describe 'District 13 live #3: backing up a missing registry key is not a failure' {
     It 'leaves LASTEXITCODE at 0 and makes no file' {
         $run = Join-Path $env:TEMP "cpkit-bk-$PID"; Set-CpContext -RunDir $run

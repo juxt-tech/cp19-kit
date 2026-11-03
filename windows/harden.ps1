@@ -94,6 +94,7 @@ if ($Apply -and -not $Yes) {
     $a = Read-Host 'Forensics questions answered AND VMware snapshot taken? [y/N]'
     if ($a -notmatch '^[Yy]') { Write-Host 'Do those first. Nothing was changed.'; exit 0 }
 }
+Repair-CpToolAcls   # before any module: a locked dism.exe blinds Shares/Features/Server
 
 function Invoke-CpNamed([string]$name) {
     $key = @($order.Keys) | Where-Object { $_ -ieq $name } | Select-Object -First 1

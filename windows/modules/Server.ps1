@@ -22,7 +22,10 @@ function Invoke-CpModServer {
     Write-Host "  installed roles: $($roles -join ', ')"
     if ($IsDC) { Invoke-CpServerAD -Config $Config }
     if ($roles -contains 'DNS') {
-        Get-DnsServerZone -ErrorAction SilentlyContinue | Where-Object { -not $_.IsAutoCreated -and $_.ZoneType -eq 'Primary' } | ForEach-Object {
+        # A stopped DNS service makes Get-DnsServerZone THROW (District 13), which ended the whole module.
+        $zones = try { @(Get-DnsServerZone -ErrorAction Stop) } catch {
+            Add-CpFinding server "DNS zones not checked ($($_.Exception.Message.Trim())). DNS Server service running? Start it (Services module does when DNS is README-critical), then re-run -Module Server"; @() }
+        $zones | Where-Object { -not $_.IsAutoCreated -and $_.ZoneType -eq 'Primary' } | ForEach-Object {
             $z = $_.ZoneName
             if ($_.SecureSecondaries -eq 'TransferAnyServer') {
                 Invoke-CpAction server "DNS zone ${z}: no zone transfers to any server" 'zone transfer leaks every host record' { Set-DnsServerPrimaryZone -Name $z -SecureSecondaries NoTransfer -ErrorAction Stop }.GetNewClosure()

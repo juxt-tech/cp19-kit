@@ -220,6 +220,48 @@ function Find-CpFiles {
     }
 }
 
+# Admin tools an image can lock with a Deny ACE. District 13 put Everyone + SYSTEM Deny on dism.exe:
+# every DISM call (features, SMB1, roles) then failed with a misleading "temporary folder" error.
+function Get-CpAdminToolPaths {
+    $s = Join-Path $env:windir 'System32'
+    @((Join-Path $env:windir 'regedit.exe')) + @(
+        'dism.exe','Dism\DismHost.exe','cmd.exe','WindowsPowerShell\v1.0\powershell.exe','WindowsPowerShell\v1.0\powershell_ise.exe',
+        'mmc.exe','Taskmgr.exe','reg.exe','sc.exe','net.exe','net1.exe','netsh.exe','icacls.exe','takeown.exe','auditpol.exe',
+        'secedit.exe','gpupdate.exe','bcdedit.exe','sfc.exe','eventvwr.exe','control.exe','secpol.msc','gpedit.msc',
+        'services.msc','compmgmt.msc','lusrmgr.msc','wf.msc','gpmc.msc','dsa.msc'
+    ) | ForEach-Object { if ($_ -like '*:\*') { $_ } else { Join-Path $s $_ } }
+}
+
+# Pure. Access = ACL rules (IdentityReference, AccessControlType). Returns each denied identity once.
+function Get-CpDenyIdentities($Access) {
+    @($Access | Where-Object { [string]$_.AccessControlType -eq 'Deny' } | ForEach-Object { [string]$_.IdentityReference } | Select-Object -Unique)
+}
+
+# Runs before any module (DISM-based modules need it). Reports in audit, removes the Deny entries on -Apply.
+function Repair-CpToolAcls {
+    param([string[]]$Paths = (Get-CpAdminToolPaths))
+    Write-CpHeader 'PREFLIGHT  (admin tools locked by Deny permissions)'
+    $hit = 0
+    foreach ($p in $Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        $acl = try { Get-Acl -LiteralPath $p -ErrorAction Stop } catch { $null }
+        if (-not $acl) { $hit++; Add-CpFinding system "cannot read the permissions of $p - check: icacls `"$p`""; continue }
+        $deny = Get-CpDenyIdentities $acl.Access
+        if ($deny.Count -eq 0) { continue }
+        $hit++
+        Add-CpFinding system "$p has Deny entries for $($deny -join ', ') (owner $($acl.Owner)) - the tool is blocked. Fix: icacls `"$p`" /remove:d <name>"
+        $restoreOwner = $p -like "$env:windir\*"
+        $bak = if ($script:CpRun) { Join-Path $script:CpRun ('backup\acl-' + [IO.Path]::GetFileName($p) + '.txt') }   # closures lose $script:
+        Invoke-CpAction system "remove Deny entries on $p ($($deny -join ', '))" 'planted Deny ACE blocks an admin tool' {
+            if ($bak) { New-Item -ItemType Directory -Force (Split-Path $bak) | Out-Null; & icacls.exe $p /save $bak 2>&1 | Out-Null }
+            foreach ($i in $deny) { & icacls.exe $p /remove:d $i 2>&1 | Out-Null; if ($LASTEXITCODE) { return } }
+            # System32 binaries belong to TrustedInstaller; the plant made Administrators the owner.
+            if ($restoreOwner) { & icacls.exe $p /setowner 'NT SERVICE\TrustedInstaller' 2>&1 | Out-Null }
+        }.GetNewClosure()
+    }
+    if ($hit -eq 0) { Write-CpOk 'admin tools (dism, cmd, PowerShell, mmc, regedit, ...) not locked' }
+}
+
 function New-CpReg([string]$Path, [string]$Name, $Value, [string]$Why, [string]$Type = 'DWord') {
     [pscustomobject]@{ Path = $Path; Name = $Name; Type = $Type; Value = $Value; Why = $Why }
 }
