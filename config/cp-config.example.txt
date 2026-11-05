@@ -21,6 +21,8 @@ NEW_PASSWORD=Cyb3rP@triot!2026
 
 # Windows only: yes if the README requires Remote Desktop.
 KEEP_RDP=no
+# yes = reset every README user to NEW_PASSWORD (not you, not service accounts). Use when the README says passwords are compromised.
+RESET_PASSWORDS=no
 
 # Windows only: share names the README requires (besides the default admin shares).
 KEEP_SHARES=

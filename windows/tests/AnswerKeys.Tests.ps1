@@ -328,6 +328,28 @@ Describe 'District 13 live #6: local Group Policy (Registry.pol) silently undid 
     }
 }
 
+Describe 'RESET_PASSWORDS (District 13 README: all passwords compromised; scored "Changed Password for president_snow")' {
+    $cfg = [pscustomobject]@{ Admins = @('kat', 'sen'); Users = @('snow', 'rue', 'svc_web', 'gone'); ResetPasswords = $true; NewPassword = 'x' }
+    $plan = Get-CpUserPlan -Config $cfg -CurrentUser kat -LocalUsers @('kat', 'sen', 'snow', 'rue', 'svc_web') -Admins @('kat', 'sen') -ServiceAccounts @('svc_web') -RecentPassword @('rue') -IsDC
+    $names = @($plan | Where-Object Action -eq 'ResetPassword' | ForEach-Object Name)
+    It 'resets README users' { ($names -join ',') | Should Be 'sen,snow' }
+    It 'never resets the account running the kit' { $names -contains 'kat' | Should Be $false }
+    It 'never resets a service account (it would stop its service)' { $names -contains 'svc_web' | Should Be $false }
+    It 'skips a recent reset, so a second run changes nothing' { $names -contains 'rue' | Should Be $false }
+    It 'skips a README user who does not exist yet' { $names -contains 'gone' | Should Be $false }
+    It 'is off unless the config asks for it' {
+        $off = [pscustomobject]@{ Admins = @('kat'); Users = @('snow'); NewPassword = 'x' }
+        @(Get-CpUserPlan -Config $off -CurrentUser kat -LocalUsers @('kat', 'snow') -Admins @('kat') | Where-Object Action -eq 'ResetPassword').Count | Should Be 0
+    }
+    It 'reads RESET_PASSWORDS from the config file' {
+        $f = Join-Path $env:TEMP "cpkit-cfg-$PID.txt"; Set-Content $f "ADMINS=a`r`nRESET_PASSWORDS=yes"
+        (Import-CpConfig -Path $f).ResetPasswords | Should Be $true
+        Set-Content $f 'ADMINS=a'
+        (Import-CpConfig -Path $f).ResetPasswords | Should Be $false
+        Remove-Item $f
+    }
+}
+
 Describe 'District 13 live #3: backing up a missing registry key is not a failure' {
     It 'leaves LASTEXITCODE at 0 and makes no file' {
         $run = Join-Path $env:TEMP "cpkit-bk-$PID"; Set-CpContext -RunDir $run

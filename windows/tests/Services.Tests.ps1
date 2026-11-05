@@ -28,8 +28,7 @@ Describe 'Get-CpServicePlan' {
     $cfgNoRdp = [pscustomobject]@{ Admins=@('a'); Users=@(); Critical=@(); Allowed=@(); NewPassword=''; KeepRdp=$false; KeepShares=@() }
     $plan2 = Get-CpServicePlan -Services $svcs -Config $cfgNoRdp
     It 'disables RDP when README does not need it' { Has $plan2 'DisableOnReboot' 'TermService' | Should Be $true }
-    # District 13 live: Stop-Service TermService -Force froze the local console (input dead, admin shell gone).
-    It 'never stops RDP services live (TermService also runs the console session)' {
+    It 'disables RDP services without a live stop (they stop at the next reboot)' {
         $p = Get-CpServicePlan -Services @((Svc TermService Manual Running), (Svc SessionEnv Manual Running), (Svc UmRdpService Manual Running)) -Config $cfgNoRdp
         @($p | Where-Object Action -eq 'Disable').Count | Should Be 0
         @($p | Where-Object Action -eq 'DisableOnReboot').Count | Should Be 3

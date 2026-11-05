@@ -13,6 +13,7 @@
 - [ ] Copy `config\cp-config.example.txt` to `cp-config.txt` and fill it in from the README. The script reads it to protect README items.
   - Critical services: use the **service name** (Remote Desktop = `TermService`, IIS = `W3SVC`, FTP = `FTPSVC`, SMB = `LanmanServer`, DNS = `DNS`). Nicknames `RDP FTP IIS SMB SSH print` also work. The banner prints `protected: X -> Y` for each one; a yellow **WARNING not found** means fix the config before `-Apply`.
   - README wants RDP? `KEEP_RDP=yes`. README names shares? `KEEP_SHARES=name1 name2`.
+  - README says passwords are compromised? `RESET_PASSWORDS=yes` (with `NEW_PASSWORD`): resets every README user except you and service accounts. Write the password down.
 - [ ] Open the scoring report shortcut on the desktop. Keep it open; refresh after each section.
 
 </details>
@@ -59,7 +60,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 | 4 | SecurityOptions | UAC on + secure desktop, no anonymous SAM/share enumeration, NTLMv2 only, no LM hash, SMB signing, CTRL+ALT+DEL, don't show last user, lock after 15 min idle, no shutdown from the logon screen; insecure guest logons off, SmartScreen = Warn, AutoPlay off, WDigest off, DEP for all programs (skipped if BitLocker is on); **reports** risky User Rights Assignment entries (incl. a plain user with *Log on as a service*) | Local Policies |
 | 5 | Firewall | all 3 profiles on, block inbound, allow outbound, notify, no unicast response | Defensive Countermeasures |
 | 6 | Defender | real-time, PUA, cloud on; **removes exclusions** (CP19 had a `.exe` exclusion); threat default actions "Allow / No action" → Quarantine; updates signatures; quick scan | Defensive Countermeasures |
-| 7 | Services | disables RemoteRegistry, Telnet, SNMP, Simple TCP/IP (`simptcp`), FTP/IIS (unless critical), UPnP, Xbox, etc.; Windows Update automatic; DHCP Client, Event Log, Server, Firewall, BFE **automatic and running**. `KEEP_RDP=no`: the RDP services are set Disabled but **not stopped** (stopping TermService freezes the console); they stop at the next reboot | Service Auditing |
+| 7 | Services | disables RemoteRegistry, Telnet, SNMP, Simple TCP/IP (`simptcp`), FTP/IIS (unless critical), UPnP, Xbox, etc.; Windows Update automatic; DHCP Client, Event Log, Server, Firewall, BFE **automatic and running**. `KEEP_RDP=no`: the RDP services are set Disabled and stop at the next reboot (RDP itself is blocked at once by the Remote module) | Service Auditing |
 | 8 | Remote | RDP off (or ON + NLA + TLS + secure RPC, also as Group Policy, if `KEEP_RDP=yes`); Remote Assistance off | Uncategorized OS Settings |
 | 9 | Shares | removes non-default shares (lists access first; never admin or role shares); SMBv1 off; SMB signing; SMB minimum 3.1.1 (Win11 24H2 / Server 2025 only) | Uncategorized OS Settings |
 | 10 | Features | Telnet client, TFTP, SMB1, PowerShell v2 off | Uncategorized OS Settings |

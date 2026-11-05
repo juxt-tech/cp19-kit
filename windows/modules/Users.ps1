@@ -12,6 +12,7 @@ function Get-CpUserPlan {
         [string[]]$NoPasswordRequired = @(),
         [string[]]$NeverExpires = @(),
         [string[]]$ServiceAccounts = @(),      # used by a service / app pool / SPN: never deleted or demoted
+        [string[]]$RecentPassword = @(),       # changed in the last hours: a re-run must not reset them again
         [switch]$IsDC
     )
     $builtin  = @('Administrator','Guest','DefaultAccount','WDAGUtilityAccount','defaultuser0','krbtgt')
@@ -51,6 +52,12 @@ function Get-CpUserPlan {
     }
     foreach ($u in $NeverExpires) {
         if ($u -ine $CurrentUser -and $listed -contains $u) { & $add 'PasswordNeverExpiresOff' $u }
+    }
+    if ($Config.ResetPasswords) {
+        foreach ($u in $listed) {
+            if ($u -ieq $CurrentUser -or $LocalUsers -notcontains $u -or (& $isSvc $u) -or $RecentPassword -contains $u) { continue }
+            & $add 'ResetPassword' $u
+        }
     }
     return ,$plan.ToArray()
 }
@@ -130,7 +137,8 @@ function Invoke-CpModUsers {
     Write-Host "  Administrators   : $($s.Admins -join ' ')"
     $svc = Get-CpServiceAccounts -AllUsers $s.LocalUsers
     $plan = Get-CpUserPlan -Config $Config -CurrentUser $env:USERNAME -LocalUsers $s.LocalUsers -Admins $s.Admins `
-        -DisabledUsers $s.DisabledUsers -NoPasswordRequired $s.NoPasswordRequired -NeverExpires $s.NeverExpires -ServiceAccounts $svc
+        -DisabledUsers $s.DisabledUsers -NoPasswordRequired $s.NoPasswordRequired -NeverExpires $s.NeverExpires -ServiceAccounts $svc `
+        -RecentPassword @(Get-LocalUser | Where-Object { $_.PasswordLastSet -gt (Get-Date).AddHours(-6) } | ForEach-Object Name)
     if ($plan.Count -eq 0) { Write-CpOk 'accounts already match the README' }
     $pw = $null
     if ($Config.NewPassword) { $pw = ConvertTo-SecureString $Config.NewPassword -AsPlainText -Force }
@@ -151,6 +159,9 @@ function Invoke-CpModUsers {
                 if (-not $pw) { Add-CpFinding users "$n may have no password - set one by hand"; continue }
                 Invoke-CpAction users "set password for $n + require one" 'account allowed to have no password' { Set-LocalUser -Name $n -Password $pw -ErrorAction Stop; & net.exe user $n /passwordreq:yes | Out-Null }.GetNewClosure() }
             'PasswordNeverExpiresOff' { Invoke-CpAction users "make $n's password expire" "'password never expires' is scored" { Set-LocalUser -Name $n -PasswordNeverExpires $false -ErrorAction Stop }.GetNewClosure() }
+            'ResetPassword' {
+                if (-not $pw) { Add-CpFinding users "RESET_PASSWORDS=yes but NEW_PASSWORD is empty - $n not reset"; continue }
+                Invoke-CpAction users "reset password for $n" 'RESET_PASSWORDS=yes (README says passwords are compromised)' { Set-LocalUser -Name $n -Password $pw -ErrorAction Stop }.GetNewClosure() }
             'KeepServiceAccount' { Add-CpFinding users "$n is not in the README but looks like a SERVICE ACCOUNT (runs a service or IIS app pool, or svc_ name) - kept. Delete by hand only if nothing uses it" }
             'KeepServiceAdmin'   { Add-CpFinding users "service account $n is in Administrators - kept (removing can stop its service). Check the README" }
         }

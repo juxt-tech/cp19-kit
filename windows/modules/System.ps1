@@ -27,8 +27,9 @@ function Get-CpServicePlan {
             if ($bad -contains $n -or $script:CpRdpServices -contains $n) { $plan.Add([pscustomobject]@{ Action='KeepCritical'; Name=$n }) }
             continue
         }
-        # TermService also runs the LOCAL console session: stopping it live freezes keyboard/mouse
-        # (District 13). The Remote module's fDenyTSConnections=1 blocks RDP at once; the service stops at reboot.
+        # Conservative, not required: disabled now, stops at the next reboot. The Remote module's
+        # fDenyTSConnections=1 blocks RDP at once. (A live stop kept the session and Explorer up on
+        # District 13; keyboard/mouse afterwards were not tested, so no live stop before a round.)
         if (-not $Config.KeepRdp -and $script:CpRdpServices -contains $n) {
             if ([string]$s.StartType -ne 'Disabled') { $plan.Add([pscustomobject]@{ Action='DisableOnReboot'; Name=$n }) }
             continue

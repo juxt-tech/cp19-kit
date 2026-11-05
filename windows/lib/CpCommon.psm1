@@ -55,7 +55,7 @@ function Import-CpConfig {
         if ($k -ne 'NEW_PASSWORD') { $v = $v -replace '\s+#.*$', '' }
         $h[$k] = $v.Trim()
     }
-    $known = 'ADMINS','USERS','CRITICAL_SERVICES','ALLOWED_SOFTWARE','NEW_PASSWORD','KEEP_RDP','KEEP_SHARES'
+    $known = 'ADMINS','USERS','CRITICAL_SERVICES','ALLOWED_SOFTWARE','NEW_PASSWORD','KEEP_RDP','KEEP_SHARES','RESET_PASSWORDS'
     foreach ($k in $h.Keys) { if ($known -notcontains $k) { Write-Host "  (config: unknown key '$k' ignored)" -ForegroundColor Yellow } }
     $cfg = [pscustomobject]@{
         Admins      = Split-CpList $h['ADMINS']
@@ -65,6 +65,7 @@ function Import-CpConfig {
         NewPassword = [string]$h['NEW_PASSWORD']
         KeepRdp     = ([string]$h['KEEP_RDP']) -match '^(y|yes|true|1)$'
         KeepShares  = Split-CpList $h['KEEP_SHARES']
+        ResetPasswords = ([string]$h['RESET_PASSWORDS']) -match '^(y|yes|true|1)$'
     }
     if ($RequireUsers -and $cfg.Admins.Count -eq 0) { throw 'ADMINS is empty in the config - fill it from the README before running the users module.' }
     $cfg

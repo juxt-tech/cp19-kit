@@ -50,14 +50,15 @@ function Invoke-CpServerAD {
     param($Config)
     Import-Module ActiveDirectory -ErrorAction Stop
     $dom = Get-ADDomain
-    $users  = @(Get-ADUser -Filter * -Properties PasswordNeverExpires, PasswordNotRequired, DoesNotRequirePreAuth, AllowReversiblePasswordEncryption)
+    $users  = @(Get-ADUser -Filter * -Properties PasswordNeverExpires, PasswordNotRequired, DoesNotRequirePreAuth, AllowReversiblePasswordEncryption, PasswordLastSet)
     $das    = @(Get-ADGroupMember 'Domain Admins' -ErrorAction SilentlyContinue | Where-Object objectClass -eq 'user' | ForEach-Object SamAccountName)
     $svc = Get-CpServiceAccounts -AllUsers ($users | ForEach-Object SamAccountName) -IsDC
     $plan = Get-CpUserPlan -Config $Config -CurrentUser $env:USERNAME -IsDC `
         -LocalUsers ($users | ForEach-Object SamAccountName) -Admins $das `
         -DisabledUsers ($users | Where-Object { -not $_.Enabled } | ForEach-Object SamAccountName) `
         -NoPasswordRequired ($users | Where-Object PasswordNotRequired | ForEach-Object SamAccountName) `
-        -NeverExpires ($users | Where-Object PasswordNeverExpires | ForEach-Object SamAccountName) -ServiceAccounts $svc
+        -NeverExpires ($users | Where-Object PasswordNeverExpires | ForEach-Object SamAccountName) -ServiceAccounts $svc `
+        -RecentPassword ($users | Where-Object { $_.PasswordLastSet -gt (Get-Date).AddHours(-6) } | ForEach-Object SamAccountName)
     $pw = if ($Config.NewPassword) { ConvertTo-SecureString $Config.NewPassword -AsPlainText -Force } else { $null }
     foreach ($a in $plan) {
         $n = $a.Name
@@ -71,6 +72,8 @@ function Invoke-CpServerAD {
             'DisableBuiltin'    { Invoke-CpAction server "disable built-in $n" 'built-in accounts are attack targets' { Disable-ADAccount -Identity $n -ErrorAction Stop }.GetNewClosure() }
             'SetPassword'       { Invoke-CpAction server "require a password for $n" 'PASSWD_NOTREQD flag set' { Set-ADUser -Identity $n -PasswordNotRequired $false -ErrorAction Stop }.GetNewClosure() }
             'PasswordNeverExpiresOff' { Invoke-CpAction server "make $n's password expire" 'never-expires is scored' { Set-ADUser -Identity $n -PasswordNeverExpires $false -ErrorAction Stop }.GetNewClosure() }
+            'ResetPassword'     { if (-not $pw) { Add-CpFinding server "RESET_PASSWORDS=yes but NEW_PASSWORD is empty - $n not reset"; continue }
+                                  Invoke-CpAction server "reset password for $n" 'RESET_PASSWORDS=yes (README says passwords are compromised)' { Set-ADAccountPassword -Identity $n -Reset -NewPassword $pw -ErrorAction Stop }.GetNewClosure() }
             'KeepServiceAccount' { Add-CpFinding server "AD user $n is not in the README but looks like a SERVICE ACCOUNT (SPN / runs a service or IIS app pool / svc_ name) - kept. Delete only if nothing uses it" }
             'KeepServiceAdmin'   { Add-CpFinding server "service account $n is a Domain Admin - kept (removing can stop its service). Check the README" }
         }
