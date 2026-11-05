@@ -114,6 +114,7 @@ if (Test-Path $runFile) {
     # The VM or the agent restarted while a job ran (e.g. the job rebooted). Never re-run it.
     $n = [int](Get-Content $runFile -TotalCount 1)
     Save-Result $n "#job=$n status=interrupted (agent or VM restarted while it ran)`r`n"
+    if ($n -gt $script:Last) { $script:Last = $n; Set-Content -Path $lastFile -Value $n }   # a blue screen can lose last.txt
     Remove-Item $runFile -Force
 }
 Write-AgentLog "agent v$Version start as $([Environment]::UserName) server=$Server id=$Id last=$($script:Last)"

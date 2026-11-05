@@ -230,6 +230,25 @@ Describe 'District 13 live #4: admin tools locked with Deny ACEs (dism.exe: Ever
     }
 }
 
+Describe 'District 13 live #5: service control (Stop-Service Browser blue-screened, WinRM hung forever)' {
+    It 'never uses *-Service cmdlets to change a service: they match DISPLAY names and drivers, and wait forever' {
+        $code = (Get-Content (Join-Path $kit 'modules\System.ps1')) -notmatch '^\s*#'
+        ($code -match '\b(Stop|Start|Set|Restart)-Service\b').Count | Should Be 0
+    }
+    It 'reports success as soon as the state is reached' {
+        $script:calls = 0
+        Wait-CpServiceState -Name x -State Stopped -TimeoutSec 5 -PollMs 10 -Probe { param($n) $script:calls++; if ($script:calls -ge 3) { 'Stopped' } else { 'Stop Pending' } } | Should Be $true
+    }
+    It 'gives up at the time limit instead of hanging (WinRM stuck in StopPending)' {
+        $t0 = Get-Date
+        Wait-CpServiceState -Name x -State Stopped -TimeoutSec 1 -PollMs 50 -Probe { param($n) 'Stop Pending' } | Should Be $false
+        ((Get-Date) - $t0).TotalSeconds | Should BeLessThan 3
+    }
+    It 'a missing service is not treated as stopped by the probe' {
+        Wait-CpServiceState -Name cpkit-no-such-service-123 -State Running -TimeoutSec 1 -PollMs 100 | Should Be $false
+    }
+}
+
 Describe 'District 13 live #3: backing up a missing registry key is not a failure' {
     It 'leaves LASTEXITCODE at 0 and makes no file' {
         $run = Join-Path $env:TEMP "cpkit-bk-$PID"; Set-CpContext -RunDir $run

@@ -97,6 +97,7 @@ if [ -f "$ROOT/running.txt" ]; then   # VM or agent restarted mid-job: never re-
     n=$(head -n1 "$ROOT/running.txt")
     echo "#job=$n status=interrupted (agent or VM restarted while it ran)" > "$ROOT/jobs/res-$n.txt"
     save_result "$n" "$ROOT/jobs/res-$n.txt"; rm -f "$ROOT/running.txt"
+    if [ "$n" -gt "$LAST" ]; then LAST=$n; echo "$n" > "$ROOT/last.txt"; fi   # a crash can lose last.txt
 fi
 log "agent v$VERSION start as $(id -un) server=$S id=$ID last=$LAST"
 

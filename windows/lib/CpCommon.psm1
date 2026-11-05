@@ -220,6 +220,36 @@ function Find-CpFiles {
     }
 }
 
+# Service control by EXACT key name, with a time limit. Never use Stop/Set/Start-Service -Name here:
+#  - they also match display names and drivers. On District 13 'Browser' resolved to the bowser
+#    file-system driver (display name "Browser"), -Force stopped Workstation with it, and unloading
+#    bowser.sys blue-screened the machine (bugcheck 0xD4), every time.
+#  - they wait forever: WinRM sat in StopPending for 4+ minutes and the module never finished.
+function Wait-CpServiceState {
+    param([string]$Name, [string]$State, [int]$TimeoutSec = 20, [int]$PollMs = 500,
+        [scriptblock]$Probe = { param($n) [string](Get-CimInstance Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue).State })
+    $end = (Get-Date).AddSeconds($TimeoutSec)
+    do {
+        if ((& $Probe $Name) -eq $State) { return $true }
+        Start-Sleep -Milliseconds $PollMs
+    } while ((Get-Date) -lt $end)
+    return $false
+}
+
+# sc.exe's own exit code is ignored: "not started" and "dependents running" are normal; the state decides.
+function Stop-CpService([string]$Name, [int]$TimeoutSec = 15) {
+    & sc.exe stop $Name 2>&1 | Out-Null; $global:LASTEXITCODE = 0
+    Wait-CpServiceState -Name $Name -State 'Stopped' -TimeoutSec $TimeoutSec
+}
+
+function Start-CpService([string]$Name, [int]$TimeoutSec = 45) {
+    & sc.exe start $Name 2>&1 | Out-Null; $global:LASTEXITCODE = 0
+    Wait-CpServiceState -Name $Name -State 'Running' -TimeoutSec $TimeoutSec
+}
+
+# Mode: auto | disabled | demand. A non-zero exit code stays set, so Invoke-CpAction logs FAILED.
+function Set-CpServiceStart([string]$Name, [string]$Mode) { & sc.exe config $Name start= $Mode 2>&1 | Out-Null }
+
 # Admin tools an image can lock with a Deny ACE. District 13 put Everyone + SYSTEM Deny on dism.exe:
 # every DISM call (features, SMB1, roles) then failed with a misleading "temporary folder" error.
 function Get-CpAdminToolPaths {

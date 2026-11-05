@@ -11,23 +11,45 @@ function global:Install-Kit([string]$Config = 'cp-config.txt') {
     "kit installed: $((Get-ChildItem C:\cpkit -Recurse -File).Count) files, config $Config"
 }
 
-# One harden.ps1 run. Prints the console output (the job result) and uploads findings + log.
-function global:Run-Kit([string]$Tag, [string[]]$KitArgs) {
+# One harden.ps1 run. Streams the console output (live in the heartbeat, and the job result) and
+# uploads findings + log. A hang is reported, not waited out: on timeout it lists services stuck in
+# a Pending state and the kit's child processes, then kills the run.
+function global:Run-Kit([string]$Tag, [string[]]$KitArgs, [int]$Timeout = 900) {
     Set-Location C:\cpkit
-    $t0 = Get-Date
+    $t0 = Get-Date; $out = "C:\$Tag.txt"
     # The agent is SYSTEM, but the kit protects "the user running it" ($env:USERNAME). Act as the
     # signed-in team member, like a real run from their admin PowerShell.
     $saved = $env:USERNAME
     $who = [string](Get-CimInstance Win32_ComputerSystem).UserName
     if ($who) { $env:USERNAME = ($who -split '\\')[-1] }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\harden.ps1 @KitArgs *> "C:\$Tag.txt"
+    $argv = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '.\windows\harden.ps1') + $KitArgs
+    $p = Start-Process powershell.exe -ArgumentList $argv -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+    $null = $p.Handle
     $env:USERNAME = $saved
+    "### $Tag started"
+    $seen = 0; $timedOut = $false
+    while (-not $p.HasExited) {
+        Start-Sleep 3
+        $now = @(Get-Content $out -ErrorAction SilentlyContinue)
+        if ($now.Count -gt $seen) { $now[$seen..($now.Count - 1)]; $seen = $now.Count }
+        if (((Get-Date) - $t0).TotalSeconds -ge $Timeout) { $timedOut = $true; break }
+    }
+    if ($timedOut) {
+        "### TIMEOUT after ${Timeout}s - services in a Pending state:"
+        Get-Service | Where-Object { [string]$_.Status -match 'Pending' } | ForEach-Object { "    $($_.Name) ($($_.DisplayName)): $($_.Status)" }
+        "### child processes of the kit:"
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" | ForEach-Object { "    $($_.ProcessId) $($_.CommandLine)" }
+        & taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Null
+    }
+    [void]$p.WaitForExit(10000)
+    $now = @(Get-Content $out -ErrorAction SilentlyContinue)
+    if ($now.Count -gt $seen) { $now[$seen..($now.Count - 1)] }
+    if ((Test-Path "$out.err") -and (Get-Item "$out.err").Length) { '--- stderr ---'; Get-Content "$out.err" }
     $r = (Get-ChildItem C:\cpkit-runs -Directory | Sort-Object Name | Select-Object -Last 1).FullName
     up "$Tag-findings.txt" (Get-Content "$r\findings.txt" -Raw -ErrorAction SilentlyContinue)
     up "$Tag-log.txt" (Get-Content "$r\log.txt" -Raw -ErrorAction SilentlyContinue)
-    up "$Tag.txt" (Get-Content "C:\$Tag.txt" -Raw)
-    "### $Tag ($([int]((Get-Date) - $t0).TotalSeconds)s, run dir $r)"
-    Get-Content "C:\$Tag.txt"
+    up "$Tag.txt" (Get-Content $out -Raw)
+    "### $Tag finished in $([int]((Get-Date) - $t0).TotalSeconds)s (timed out: $timedOut), run dir $r"
 }
 
 # Upload the scoring report; with -Wait, first wait for the scorer to rewrite it.

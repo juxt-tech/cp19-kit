@@ -67,8 +67,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send_file(os.path.join(self.server.state, "files", parts[1]))
         if len(parts) == 2 and ok(parts[0]) and parts[1] == "next":
             after = int((urllib.parse.parse_qs(u.query).get("after") or ["0"])[0] or 0)
-            q = self.vmdir(parts[0], "q")
-            jobs = sorted((int(m.group(1)), n) for n in os.listdir(q) for m in [JOB.match(n)] if m and int(m.group(1)) > after)
+            q, r = self.vmdir(parts[0], "q"), self.vmdir(parts[0], "r")
+            # A job with a stored result is never handed out again: a blue screen or a snapshot
+            # revert can roll back the agent's own record of what it ran (District 13 re-ran jobs).
+            jobs = sorted((int(m.group(1)), n) for n in os.listdir(q) for m in [JOB.match(n)]
+                          if m and int(m.group(1)) > after and not os.path.exists(os.path.join(r, "out-%s.txt" % m.group(1))))
             if not jobs:
                 return self.send_text(404, "no job")
             n, name = jobs[0]

@@ -54,18 +54,25 @@ function Invoke-CpModServices {
         $n = $a.Name; $dn = ($svcs | Where-Object Name -eq $n).DisplayName
         switch ($a.Action) {
             'KeepCritical' { Write-CpOk "$n ($dn) kept - README critical" }
-            'Disable'      { Invoke-CpAction services "stop + disable $n ($dn)" 'risky service not required by README' { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue; Set-Service -Name $n -StartupType Disabled -ErrorAction Stop }.GetNewClosure() }
-            'DisableOnReboot' { Invoke-CpAction services "disable $n ($dn) - stops at next reboot" 'RDP not required by README; a live stop freezes the console' { Set-Service -Name $n -StartupType Disabled -ErrorAction Stop }.GetNewClosure() }
+            # Disabled first: a stop that gets stuck must not leave the service enabled.
+            'Disable'      { Invoke-CpAction services "stop + disable $n ($dn)" 'risky service not required by README' { Set-CpServiceStart $n disabled; [void](Stop-CpService $n) }.GetNewClosure() }
+            'DisableOnReboot' { Invoke-CpAction services "disable $n ($dn) - stops at next reboot" 'RDP not required by README' { Set-CpServiceStart $n disabled }.GetNewClosure() }
             'EnableAuto'   {
                 # wuauserv may legitimately stay stopped until needed; the others must really start
-                $ea = if ($script:CpMustBeRunning -contains $n) { 'Stop' } else { 'SilentlyContinue' }
-                Invoke-CpAction services "set $n ($dn) Automatic + start" 'core service must run (scored)' { Set-Service -Name $n -StartupType Automatic -ErrorAction Stop; Start-Service -Name $n -ErrorAction $ea }.GetNewClosure() }
+                $must = $script:CpMustBeRunning -contains $n
+                Invoke-CpAction services "set $n ($dn) Automatic + start" 'core service must run (scored)' { Set-CpServiceStart $n auto; if (-not (Start-CpService $n 30) -and $must) { throw "$n did not reach Running" } }.GetNewClosure() }
+        }
+    }
+    # Second try once everything is disabled: a service with running dependents refuses the first stop.
+    if ((Get-CpContext).Apply) {
+        foreach ($a in @($plan | Where-Object Action -eq 'Disable')) {
+            if (-not (Stop-CpService $a.Name 5)) { Add-CpFinding services "$($a.Name) is Disabled but did not stop in time (hung or has dependents) - it stops at the next reboot" }
         }
     }
     foreach ($c in $Config.Critical) {
         $s = Get-Service -Name $c -ErrorAction SilentlyContinue
         if (-not $s) { Add-CpFinding services "critical service '$c' not found (README needs the service NAME, e.g. TermService, W3SVC, FTPSVC)"; continue }
-        if ($s.Status -ne 'Running') { Invoke-CpAction services "start critical service $c" 'README says it must run' { Set-Service -Name $c -StartupType Automatic; Start-Service -Name $c -ErrorAction Stop }.GetNewClosure() }
+        if ($s.Status -ne 'Running') { Invoke-CpAction services "start critical service $c" 'README says it must run' { Set-CpServiceStart $c auto; if (-not (Start-CpService $c)) { throw "$c did not reach Running in 45 s" } }.GetNewClosure() }
     }
     # services running from odd places = classic backdoor
     Get-CimInstance Win32_Service | Where-Object { $_.PathName -and $_.PathName -notmatch '(?i)\\Windows\\|\\Program Files|\\ProgramData\\Microsoft\\Windows Defender' } |
