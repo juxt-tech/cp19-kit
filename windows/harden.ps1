@@ -95,6 +95,7 @@ if ($Apply -and -not $Yes) {
     if ($a -notmatch '^[Yy]') { Write-Host 'Do those first. Nothing was changed.'; exit 0 }
 }
 Repair-CpToolAcls   # before any module: a locked dism.exe blinds Shares/Features/Server
+Repair-CpLocalPolicy -Config $cfg   # ...and planted local policy would undo Defender/Updates
 
 function Invoke-CpNamed([string]$name) {
     $key = @($order.Keys) | Where-Object { $_ -ieq $name } | Select-Object -First 1

@@ -118,6 +118,11 @@ function Get-CpDefenderPolicyPlan {
         $leaf = ($k -split '\\')[-1]
         # District 13 excludes C:\aeacus\phocus.exe: removing that lets Defender quarantine the scoring engine
         if ($k -match (Get-CpScoringRegex)) { continue }
+        # ...and Exclusions_Paths is the on/off switch for that list: deleting it drops the exclusion too
+        if ($k -match '^Exclusions\\Exclusions_(\w+)$') {
+            $kind = $Matches[1]
+            if (@($Values.Keys | Where-Object { $_ -like "Exclusions\$kind\*" -and $_ -match (Get-CpScoringRegex) }).Count) { continue }
+        }
         if ($k -like 'Exclusions\*') { $out += $k; continue }
         if ($leaf -like 'Disable*' -and "$($Values[$k])" -ne '0') { $out += $k; continue }
         # "default action for severe threats = Allow / No action" (PPTH answer key)

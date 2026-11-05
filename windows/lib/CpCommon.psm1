@@ -250,6 +250,73 @@ function Start-CpService([string]$Name, [int]$TimeoutSec = 45) {
 # Mode: auto | disabled | demand. A non-zero exit code stays set, so Invoke-CpAction logs FAILED.
 function Set-CpServiceStart([string]$Name, [string]$Mode) { & sc.exe config $Name start= $Mode 2>&1 | Out-Null }
 
+# Local Group Policy lives in Registry.pol and Windows re-applies it on every refresh, so a registry
+# fix made by hand or by this kit silently comes back undone minutes later. District 13 planted
+# DisableAntiSpyware, NoAutoUpdate and **del.AUOptions there. Format: 'PReg' + version, then
+# [key;value;type;size;data] in UTF-16. Values starting **del. mean "delete this value".
+function Read-CpPolString([byte[]]$Bytes, [ref]$Pos) {
+    $s = $Pos.Value
+    while ($Pos.Value + 1 -lt $Bytes.Length -and ($Bytes[$Pos.Value] -ne 0 -or $Bytes[$Pos.Value + 1] -ne 0)) { $Pos.Value += 2 }
+    $text = [Text.Encoding]::Unicode.GetString($Bytes, $s, $Pos.Value - $s)
+    $Pos.Value += 2
+    $text
+}
+
+# Pure. Bytes -> entries (Key, Name, Type, Dword, Start, End). End is one past the closing bracket.
+function ConvertFrom-CpRegistryPol([byte[]]$Bytes) {
+    $out = New-Object System.Collections.Generic.List[object]
+    if (-not $Bytes -or $Bytes.Length -lt 8 -or [Text.Encoding]::ASCII.GetString($Bytes, 0, 4) -ne 'PReg') { return }
+    $i = 8
+    while ($i + 1 -lt $Bytes.Length -and $Bytes[$i] -eq 0x5B) {
+        $start = $i; $i += 2
+        $key = Read-CpPolString $Bytes ([ref]$i); $i += 2
+        $name = Read-CpPolString $Bytes ([ref]$i); $i += 2
+        $type = [BitConverter]::ToInt32($Bytes, $i); $i += 6
+        $size = [BitConverter]::ToInt32($Bytes, $i); $i += 6
+        $dword = if ($type -eq 4 -and $size -eq 4) { [BitConverter]::ToInt32($Bytes, $i) } else { $null }
+        $i += $size + 2
+        $out.Add([pscustomobject]@{ Key = $key; Name = $name; Type = $type; Dword = $dword; Start = $start; End = $i })
+    }
+    $out.ToArray()   # callers wrap in @(): a ,$array return reaches a pipeline as ONE item
+}
+
+# Pure. Only what fights the kit; anything else stays and is listed for the team to judge.
+function Test-CpBadPolEntry($Entry, $Config) {
+    $k = $Entry.Key; $n = $Entry.Name
+    if ($k -match 'Windows Defender' -and $n -like 'Disable*' -and $Entry.Dword -ne 0) { return $true }
+    if ($k -match 'WindowsUpdate\\AU$' -and $n -eq 'NoAutoUpdate' -and $Entry.Dword -ne 0) { return $true }
+    if ($k -match 'WindowsUpdate\\AU$' -and $n -eq '**del.AUOptions') { return $true }
+    if ($k -match 'WindowsUpdate$' -and $n -match '^(DisableWindowsUpdateAccess|SetDisableUXWUAccess)$' -and $Entry.Dword -ne 0) { return $true }
+    if ($k -match 'Terminal Services$' -and $n -eq 'fDenyTSConnections' -and $Config.KeepRdp -and $Entry.Dword -ne 0) { return $true }
+    return $false
+}
+
+# Pure. The file's bytes without the given entries.
+function Remove-CpPolEntries([byte[]]$Bytes, $Entries) {
+    $m = New-Object IO.MemoryStream; $pos = 0
+    foreach ($e in @($Entries | Sort-Object Start)) { $m.Write($Bytes, $pos, $e.Start - $pos); $pos = $e.End }
+    $m.Write($Bytes, $pos, $Bytes.Length - $pos)
+    , $m.ToArray()
+}
+
+# Runs before any module, or the Defender and Updates fixes are undone at the next policy refresh.
+function Repair-CpLocalPolicy {
+    param($Config, [string]$Path = (Join-Path $env:windir 'System32\GroupPolicy\Machine\Registry.pol'))
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $all = @(ConvertFrom-CpRegistryPol $bytes)
+    $bad = @($all | Where-Object { Test-CpBadPolEntry $_ $Config })
+    foreach ($e in $bad) { Add-CpFinding system "local Group Policy keeps undoing a fix: $($e.Key) -> $($e.Name)" }
+    $rest = @($all | Where-Object { $bad -notcontains $_ -and $_.Name -notlike '**del.*' })
+    if ($rest.Count) { Add-CpFinding system "local Group Policy also sets (gpedit.msc, re-applied on every refresh): $(($rest | ForEach-Object Name) -join ', ')" }
+    if ($bad.Count -eq 0) { Write-CpOk 'local Group Policy does not fight the kit'; return }
+    $new = Remove-CpPolEntries $bytes $bad
+    Invoke-CpAction system "remove $($bad.Count) planted value(s) from local Group Policy" 'Registry.pol re-applies them over any fix' {
+        Backup-CpFile -Path $Path
+        [IO.File]::WriteAllBytes($Path, $new)
+    }.GetNewClosure()
+}
+
 # Admin tools an image can lock or wipe. District 13 zeroed dism.exe + sfc.exe and hid a 0-byte
 # System32\Dism\dism.exe with Everyone + SYSTEM Deny: the DISM API copies that whole folder to temp,
 # so every DISM call (features, SMB1) failed with a misleading "temporary folder" error.

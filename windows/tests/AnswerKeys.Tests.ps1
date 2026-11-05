@@ -260,6 +260,74 @@ Describe 'District 13 live #5: service control (Stop-Service Browser blue-screen
     }
 }
 
+Describe 'District 13 live #6: local Group Policy (Registry.pol) silently undid the Defender + Updates fixes' {
+    function New-PolEntry([string]$Key, [string]$Name, [int]$Type = 4, [byte[]]$Data = [BitConverter]::GetBytes([int]1)) {
+        $u = [Text.Encoding]::Unicode
+        $m = New-Object IO.MemoryStream
+        foreach ($b in @($u.GetBytes("[$Key`0;$Name`0;"), [BitConverter]::GetBytes($Type), $u.GetBytes(';'),
+                [BitConverter]::GetBytes($Data.Length), $u.GetBytes(';'), $Data, $u.GetBytes(']'))) { $m.Write($b, 0, $b.Length) }
+        , $m.ToArray()
+    }
+    function New-Pol([byte[][]]$Entries) {
+        $m = New-Object IO.MemoryStream
+        $h = [byte[]](0x50, 0x52, 0x65, 0x67, 1, 0, 0, 0); $m.Write($h, 0, 8)
+        foreach ($e in $Entries) { $m.Write($e, 0, $e.Length) }
+        , $m.ToArray()
+    }
+    $wu = 'Software\Policies\Microsoft\Windows\WindowsUpdate\AU'; $wd = 'Software\Policies\Microsoft\Windows Defender'
+    $ts = 'Software\Policies\Microsoft\Windows NT\Terminal Services'
+    $pol = New-Pol @((New-PolEntry $wd 'DisableAntiSpyware'), (New-PolEntry $wu 'NoAutoUpdate'), (New-PolEntry $wu '**del.AUOptions' 1 ([byte[]](32, 0))),
+        (New-PolEntry "$wd\Exclusions\Paths" 'C:\aeacus\phocus.exe' 1 ([byte[]](48, 0, 0, 0))), (New-PolEntry 'Software\Policies\Microsoft\Windows\Network Connections' 'NC_AllowNetBridge_NLA' 4 ([BitConverter]::GetBytes([int]0))))
+    $cfg = [pscustomobject]@{ KeepRdp = $false }
+    It 'parses every entry' {
+        $e = @(ConvertFrom-CpRegistryPol $pol)
+        $e.Count | Should Be 5
+        $e[0].Name | Should Be 'DisableAntiSpyware'
+        $e[0].Key | Should Be $wd
+        $e[0].Dword | Should Be 1
+    }
+    It 'survives a file that is not a Registry.pol' { @(ConvertFrom-CpRegistryPol ([byte[]](1, 2, 3))).Count | Should Be 0 }
+    It 'flags what undoes the kit, keeps the rest (scoring exclusion included)' {
+        $bad = @(ConvertFrom-CpRegistryPol $pol | Where-Object { Test-CpBadPolEntry $_ $cfg })
+        ($bad | ForEach-Object Name) -join ',' | Should Be 'DisableAntiSpyware,NoAutoUpdate,**del.AUOptions'
+    }
+    It 'NoAutoUpdate=0 is fine' {
+        $e = @(ConvertFrom-CpRegistryPol (New-Pol @(, (New-PolEntry $wu 'NoAutoUpdate' 4 ([BitConverter]::GetBytes([int]0))))))
+        Test-CpBadPolEntry $e[0] $cfg | Should Be $false
+    }
+    It 'a policy denying RDP is bad only when the README needs RDP' {
+        $e = @(ConvertFrom-CpRegistryPol (New-Pol @(, (New-PolEntry $ts 'fDenyTSConnections'))))
+        Test-CpBadPolEntry $e[0] $cfg | Should Be $false
+        Test-CpBadPolEntry $e[0] ([pscustomobject]@{ KeepRdp = $true }) | Should Be $true
+    }
+    It 'rewrites the file without those entries, byte-exact for the others' {
+        $all = @(ConvertFrom-CpRegistryPol $pol)
+        $new = Remove-CpPolEntries $pol @($all | Where-Object { Test-CpBadPolEntry $_ $cfg })
+        $left = @(ConvertFrom-CpRegistryPol $new)
+        ($left | ForEach-Object Name) -join ',' | Should Be 'C:\aeacus\phocus.exe,NC_AllowNetBridge_NLA'
+        $left[1].Dword | Should Be 0
+    }
+    It 'removes planted entries from the file on -Apply, keeps a backup, only reports in audit' {
+        $f = Join-Path $env:TEMP "cpkit-pol-$PID.pol"; [IO.File]::WriteAllBytes($f, $pol)
+        $run = Join-Path $env:TEMP "cpkit-pol-$PID"
+        Set-CpContext -RunDir $run; Repair-CpLocalPolicy -Config $cfg -Path $f *> $null
+        @(ConvertFrom-CpRegistryPol ([IO.File]::ReadAllBytes($f))).Count | Should Be 5
+        Set-CpContext -RunDir $run -Apply -Yes; Repair-CpLocalPolicy -Config $cfg -Path $f *> $null
+        @(ConvertFrom-CpRegistryPol ([IO.File]::ReadAllBytes($f))).Count | Should Be 2
+        (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match 'ACTION'
+        @(Get-ChildItem $run -Recurse -Filter "cpkit-pol-$PID.pol").Count | Should Be 1
+        Set-CpContext; Remove-Item $f, $run -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    It 'keeps the Exclusions_Paths switch when it enables the scoring exclusion' {
+        $plan = Get-CpDefenderPolicyPlan -Values @{ 'Exclusions\Exclusions_Paths' = 1; 'Exclusions\Paths\C:\aeacus\phocus.exe' = '0' }
+        @($plan).Count | Should Be 0
+    }
+    It 'still removes the switch when only hacker exclusions exist' {
+        $plan = Get-CpDefenderPolicyPlan -Values @{ 'Exclusions\Exclusions_Paths' = 1; 'Exclusions\Paths\C:\evil' = '0' }
+        @($plan).Count | Should Be 2
+    }
+}
+
 Describe 'District 13 live #3: backing up a missing registry key is not a failure' {
     It 'leaves LASTEXITCODE at 0 and makes no file' {
         $run = Join-Path $env:TEMP "cpkit-bk-$PID"; Set-CpContext -RunDir $run
