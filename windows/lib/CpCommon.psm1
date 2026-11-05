@@ -250,16 +250,18 @@ function Start-CpService([string]$Name, [int]$TimeoutSec = 45) {
 # Mode: auto | disabled | demand. A non-zero exit code stays set, so Invoke-CpAction logs FAILED.
 function Set-CpServiceStart([string]$Name, [string]$Mode) { & sc.exe config $Name start= $Mode 2>&1 | Out-Null }
 
-# Admin tools an image can lock with a Deny ACE. District 13 put Everyone + SYSTEM Deny on dism.exe:
-# every DISM call (features, SMB1, roles) then failed with a misleading "temporary folder" error.
+# Admin tools an image can lock or wipe. District 13 zeroed dism.exe + sfc.exe and hid a 0-byte
+# System32\Dism\dism.exe with Everyone + SYSTEM Deny: the DISM API copies that whole folder to temp,
+# so every DISM call (features, SMB1) failed with a misleading "temporary folder" error.
 function Get-CpAdminToolPaths {
     $s = Join-Path $env:windir 'System32'
-    @((Join-Path $env:windir 'regedit.exe')) + @(
-        'dism.exe','Dism\DismHost.exe','cmd.exe','WindowsPowerShell\v1.0\powershell.exe','WindowsPowerShell\v1.0\powershell_ise.exe',
+    $tools = @((Join-Path $env:windir 'regedit.exe')) + @(
+        'dism.exe','cmd.exe','WindowsPowerShell\v1.0\powershell.exe','WindowsPowerShell\v1.0\powershell_ise.exe',
         'mmc.exe','Taskmgr.exe','reg.exe','sc.exe','net.exe','net1.exe','netsh.exe','icacls.exe','takeown.exe','auditpol.exe',
         'secedit.exe','gpupdate.exe','bcdedit.exe','sfc.exe','eventvwr.exe','control.exe','secpol.msc','gpedit.msc',
         'services.msc','compmgmt.msc','lusrmgr.msc','wf.msc','gpmc.msc','dsa.msc'
     ) | ForEach-Object { if ($_ -like '*:\*') { $_ } else { Join-Path $s $_ } }
+    $tools + @(Get-ChildItem (Join-Path $s 'Dism') -File -Force -ErrorAction SilentlyContinue | ForEach-Object FullName)
 }
 
 # Pure. Access = ACL rules (IdentityReference, AccessControlType). Returns each denied identity once.
@@ -274,6 +276,9 @@ function Repair-CpToolAcls {
     $hit = 0
     foreach ($p in $Paths) {
         if (-not (Test-Path -LiteralPath $p)) { continue }
+        if ($p -match '\.(exe|dll)$' -and (Get-Item -LiteralPath $p -Force).Length -eq 0) {
+            $hit++; Add-CpFinding system "$p is EMPTY (0 bytes): the image wiped this tool, it cannot run. Use the GUI instead (Server Manager, optionalfeatures.exe)"
+        }
         $acl = try { Get-Acl -LiteralPath $p -ErrorAction Stop } catch { $null }
         if (-not $acl) { $hit++; Add-CpFinding system "cannot read the permissions of $p - check: icacls `"$p`""; continue }
         $deny = Get-CpDenyIdentities $acl.Access

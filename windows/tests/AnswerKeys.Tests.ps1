@@ -219,6 +219,17 @@ Describe 'District 13 live #4: admin tools locked with Deny ACEs (dism.exe: Ever
         (Get-Content (Join-Path $run 'log.txt') -Raw) | Should Match 'ACTION \| remove Deny'
         Set-CpContext; Remove-Item $f, $run -Recurse -Force -ErrorAction SilentlyContinue
     }
+    It 'reports an admin tool wiped to 0 bytes (District 13: dism.exe, sfc.exe)' {
+        $run = Join-Path $env:TEMP "cpkit-acl3-$PID"; Set-CpContext -RunDir $run
+        $f = Join-Path $env:TEMP "cpkit-acl3-$PID.exe"; [IO.File]::WriteAllBytes($f, [byte[]]@())
+        Repair-CpToolAcls -Paths @($f) *> $null
+        (Get-Content (Join-Path $run 'findings.txt') -Raw) | Should Match 'EMPTY \(0 bytes\)'
+        Set-CpContext; Remove-Item $f, $run -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    It 'also checks everything in System32\Dism (a locked file there breaks the whole DISM API)' {
+        $real = @(Get-ChildItem (Join-Path $env:windir 'System32\Dism') -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($real) { (Get-CpAdminToolPaths) -contains $real[0].FullName | Should Be $true }
+    }
     It 'only reports in audit mode' {
         $run = Join-Path $env:TEMP "cpkit-acl2-$PID"; Set-CpContext -RunDir $run
         $f = Join-Path $env:TEMP "cpkit-acl2-$PID.exe"; Set-Content $f 'x'
