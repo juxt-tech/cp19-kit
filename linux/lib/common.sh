@@ -77,7 +77,7 @@ cp_load_config() {
             CRITICAL_SERVICES) CP_CRITICAL="$val" ;;
             ALLOWED_SOFTWARE) CP_ALLOWED="$val" ;;
             NEW_PASSWORD) CP_NEWPASS="$val" ;;
-            KEEP_RDP|KEEP_SHARES) ;;              # Windows-only keys
+            KEEP_RDP|KEEP_SHARES|RESET_PASSWORDS) ;;              # Windows-only keys
             *) echo "  (config: unknown key '$key' ignored)" >&2 ;;
         esac
     done < "$file"

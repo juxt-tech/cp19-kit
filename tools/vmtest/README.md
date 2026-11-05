@@ -1,4 +1,4 @@
-﻿# Practice-VM test harness
+# Practice-VM test harness
 
 > **PRACTICE VMs ONLY.** The agent is a remote shell that runs as SYSTEM/root. Never install it on a
 > competition image, and remove it from any VM you hand to someone else.
@@ -54,6 +54,9 @@ Results land in `%USERPROFILE%\cpvmtest\vms\<vm>\r\` (`out-<n>.txt`, uploads fro
   That is expected; it is the kind of thing the kit should flag.
 - Jobs: PowerShell on Windows, bash on Linux. Helpers in every job: `up NAME TEXT` (Windows) /
   `up NAME < file` (Linux) uploads a file; `$CpServer`/`$CpVm` and `$CP_SERVER`/`$CP_VM`.
+- `vmrun start` must run detached (`Start-Process`). Run from a shell it can hang, and killing that shell powers the VM off. After `revertToSnapshot`, wait for vmware.exe to exit before starting.
+- District 13 only: `CSSClient_Restarter.bat` restarts the scorer every 60 s and a pass takes ~135 s on a slow VM, so reports rarely finish. For testing, kill that cmd.exe (not CSSClient): `Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | ? CommandLine -match CSSClient_Restarter | % { taskkill /PID $_.ProcessId /F }`.
+- A snapshot revert or blue screen rolls back the agent's record of finished jobs; the server skips any job with a stored result, so nothing is replayed.
 - Remove: `Unregister-ScheduledTask cpkit-test-agent -Confirm:$false; Remove-Item C:\ProgramData\cpagent -Recurse -Force`
   / `sudo systemctl disable --now cpkit-test-agent; sudo rm -rf /var/lib/cpagent /usr/local/sbin/cpkit-test-agent /etc/systemd/system/cpkit-test-agent.service`.
 - Tested: Windows agent on a Windows 10 host (jobs, errors, uploads, timeout kills the process tree,
