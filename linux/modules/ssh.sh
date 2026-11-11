@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SSH server hardening. CP category: Application Security Settings (critical service).
-# Only edits sshd when the README lists ssh as critical; otherwise reports.
+# Hardens sshd whenever it is installed (validated with sshd -t, restored on failure).
 # PasswordAuthentication stays YES so nobody gets locked out (no keys are provisioned in CP images).
 
 CP_SSH_WANT=(
@@ -45,8 +45,9 @@ mod_ssh() {
     cp_header "SSH  (sshd_config)"
     if ! _ssh_installed; then echo "  ok   openssh-server not installed"; return 0; fi
     if ! _ssh_critical; then
-        cp_finding ssh "openssh-server is installed but ssh is NOT in CRITICAL_SERVICES - if the README doesn't need it, remove it (services/software modules) "
-        return 0
+        # Still harden it: these settings never lock anyone out (PasswordAuthentication stays yes) and
+        # images score them even when the README never mentions ssh (ETH007: X11Forwarding yes).
+        cp_finding ssh "openssh-server is installed but ssh is NOT in CRITICAL_SERVICES - hardened anyway; if the README doesn't need it, consider removing it"
     fi
     local f=/etc/ssh/sshd_config plan act k v d changed=0
     cp_backup "$f"

@@ -41,7 +41,19 @@ APT::Periodic::AutocleanInterval "7";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 }
-_upd_run() { DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade; }
+# --with-new-pkgs: a kernel metapackage needing a new package is otherwise "kept back" (no release
+# change - that would be dist-upgrade). --fix-missing retry: one 404 (EOL mirror, ETH007 Debian 11:
+# 345 of them) makes apt install NOTHING; the retry installs everything that can be downloaded.
+_upd_run() {
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update || true
+    apt-get -y --with-new-pkgs upgrade && return 0
+    echo "       upgrade failed - retrying with --fix-missing (installs what can be downloaded)"
+    apt-get -y --with-new-pkgs --fix-missing upgrade
+    local left; left="$(apt list --upgradable 2>/dev/null | grep -c upgradable)"
+    [ "$left" -gt 0 ] && cp_finding updates "$left packages still upgradable after apt upgrade (mirror errors above?) - check apt list --upgradable"
+    [ "$left" -eq 0 ]
+}
 
 _upd_refresh() { DEBIAN_FRONTEND=noninteractive apt-get update; }
 

@@ -24,6 +24,25 @@ persist_crontab_extra() {
     grep -Ev '^[[:space:]]*(#|$|[A-Za-z_]+=)' "$1" 2>/dev/null | grep -Ev 'run-parts --report /etc/cron\.(hourly|daily|weekly|monthly)'
 }
 
+# Pure. A system-crontab line on stdin -> the command's first word ("@reboot user cmd" too).
+cron_line_cmd() {
+    awk '{ if ($1 ~ /^@/) print $3; else print $7 }'
+}
+# 0 when FILE's content looks like a reverse shell / bind shell (pentestmonkey, /dev/tcp, nc -e, pty).
+revshell_suspect() {
+    grep -aqiE 'reverse[ -]?shell|/dev/tcp/|use Socket|socket\.socket|IO::Socket|fsockopen|pty\.spawn|(nc|ncat|netcat)[^|;]*[[:space:]]-[ec][[:space:]]|bash -i|sh -i' "$1" 2>/dev/null
+}
+# Comment the exact line out of /etc/crontab and move the program into the run's quarantine dir
+# (kept as evidence, execute bit removed). Never deletes.
+_persist_quarantine() {
+    local line="$1" path="$2" q="$CP_RUN/quarantine" tmp
+    mkdir -p "$q"
+    tmp="$(mktemp)"
+    awk -v l="$line" '$0 == l { print "# cpkit disabled (reverse shell): " $0; next } { print }' /etc/crontab > "$tmp" && cat "$tmp" > /etc/crontab
+    rm -f "$tmp"
+    mv "$path" "$q/" && chmod a-x "$q/$(basename "$path")"
+}
+
 # Executables in the bin dirs that no package owns (each real dir once: /bin = /usr/bin on merged-usr).
 _persist_unowned_bins() {
     local owned="$1" d r seen="" f n=0
@@ -68,9 +87,22 @@ mod_persistence() {
         l="$(crontab -l -u "$u" 2>/dev/null | grep -Ev '^\s*(#|$)')"
         [ -n "$l" ] && while read -r line; do cp_finding persistence "crontab of $u: $line"; done <<< "$l"
     done
-    persist_crontab_extra /etc/crontab | while read -r l; do
+    local cmd p owned
+    owned="$(mktemp)"; cp_owned_files > "$owned"
+    while IFS= read -r l; do
         cp_finding persistence "NON-DEFAULT /etc/crontab line: $l  (what does it run? remove after forensics)"
-    done
+        cmd="$(echo "$l" | cron_line_cmd)"
+        p="$(PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin command -v "$cmd" 2>/dev/null)"
+        [ -n "$p" ] && [ -f "$p" ] || continue
+        p="$(readlink -f "$p")"
+        # Only a program no package owns AND whose content is a reverse shell: high confidence.
+        if ! grep -qxF "$p" "$owned" && revshell_suspect "$p"; then
+            cp_backup /etc/crontab
+            cp_act persistence "disable cron line '$l' and move $p to the run's quarantine/ (kept as evidence)" \
+                "it runs a reverse shell as root - ANSWER FORENSICS FIRST" _persist_quarantine "$l" "$p"
+        fi
+    done < <(persist_crontab_extra /etc/crontab)
+    rm -f "$owned"
     for f in /etc/crontab /etc/cron.d/* /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* /etc/cron.monthly/* /etc/anacrontab; do
         [ -f "$f" ] || continue
         grep -EHn "$CP_SUSPICIOUS_RE" "$f" 2>/dev/null | while read -r l; do cp_finding persistence "SUSPICIOUS cron: $l"; done

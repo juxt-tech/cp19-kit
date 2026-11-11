@@ -110,7 +110,16 @@ mod_users() {
     grep -rhsE '^[^#].*NOPASSWD' /etc/sudoers /etc/sudoers.d/ | while read -r l; do
         cp_finding users "sudoers NOPASSWD rule: $l"
     done
-    awk -F: '$3<1000 && $3!=0 && $7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1" "$7}' /etc/passwd | while read -r n sh; do
+    local sf
+    for sf in /etc/sudoers /etc/sudoers.d/*; do
+        [ -f "$sf" ] && [ -n "$(sudo_noauth_lines "$sf")" ] || continue
+        cp_backup "$sf"
+        cp_act users "comment out 'Defaults !authenticate' in $sf" "sudo would never ask for a password" _sudo_fix_noauth "$sf"
+    done
+    for u in $(sys_shell_fix_list /etc/passwd); do
+        cp_act users "usermod -s /usr/sbin/nologin $u (now $(getent passwd "$u" | cut -d: -f7))" "system account must not log in" usermod -s /usr/sbin/nologin "$u"
+    done
+    awk -F: -v l=" $CP_SYS_NOLOGIN " '$3<1000 && $3!=0 && !index(l, " " $1 " ") && $7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1" "$7}' /etc/passwd | while read -r n sh; do
         cp_finding users "system account $n has a login shell ($sh)"
     done
     dup_uids /etc/passwd | while read -r id names; do
@@ -118,6 +127,25 @@ mod_users() {
     done
     _users_guest_login
 }
+
+# Pure. Live "Defaults ... !authenticate" lines (sudo never asks for a password). ETH007 image hid
+# one in /etc/sudoers.d/README. NOPASSWD rules stay report-only (sometimes a README needs one).
+sudo_noauth_lines() { grep -E '^[[:space:]]*Defaults.*!authenticate' "$1" 2>/dev/null; }
+sudo_comment_noauth() { sed -i -E 's/^([[:space:]]*Defaults.*!authenticate.*)$/# cpkit disabled: \1/' "$1"; }
+_sudo_fix_noauth() {   # comment out, then visudo -c; a broken sudoers is restored from the backup
+    sudo_comment_noauth "$1"
+    if ! visudo -c >/dev/null 2>&1; then cp -a "$CP_RUN/backup$1" "$1"; echo "       visudo -c failed - $1 restored"; return 1; fi
+}
+
+# Accounts base-passwd creates on every Debian/Ubuntu/Mint with a no-login shell (sync keeps /bin/sync).
+CP_SYS_NOLOGIN="daemon bin sys games man lp mail news uucp proxy www-data backup list irc gnats nobody _apt"
+# Pure. Arg: passwd file. Names from that list that were given a real shell (ETH007: sys -> /bin/sh).
+sys_shell_fix_list() {
+    awk -F: -v l=" $CP_SYS_NOLOGIN " 'index(l, " " $1 " ") && $7 !~ /(nologin|false)$/ {print $1}' "$1"
+}
+
+# Pure. True when a lightdm config lets X accept connections over the network.
+lightdm_tcp_on() { grep -qiE '^[[:space:]]*xserver-allow-tcp[[:space:]]*=[[:space:]]*true' "$1" 2>/dev/null; }
 
 # Pure. "UID name name..." for every UID used by more than one account.
 dup_uids() {
@@ -136,6 +164,12 @@ _users_guest_login() {
         gdm_autologin_on "$g" && cp_finding users "gdm3 automatic login is on in $g  (set AutomaticLoginEnable=false unless README needs it)"
     done
     [ -d /etc/lightdm ] || return 0
+    for g in /etc/lightdm/lightdm.conf /etc/lightdm/lightdm.conf.d/*.conf; do
+        lightdm_tcp_on "$g" || continue
+        cp_backup "$g"
+        cp_act users "set xserver-allow-tcp=false in $g" "X server reachable over the network" \
+            sed -i -E 's/^([[:space:]]*xserver-allow-tcp[[:space:]]*=[[:space:]]*)[Tt][Rr][Uu][Ee]/\1false/' "$g"
+    done
     local f=/etc/lightdm/lightdm.conf.d/50-cpkit.conf
     if grep -rqs '^allow-guest=false' /etc/lightdm/; then echo "  ok   guest login disabled"
     else cp_act users "disable guest login (lightdm)" "guest sessions bypass accounts" \

@@ -41,7 +41,14 @@ t "edited ufw listed in findings"         grep -q "EDITED package file: /usr/sbi
 t "pam_deny.so restored (not a copy of pam_permit.so)" sh -c "d=\$(dirname \$(find / -xdev -name pam_permit.so -path '*security*' | head -1)); ! cmp -s \$d/pam_deny.so \$d/pam_permit.so"
 f "ufw's sysctl.conf still turns martian logging off at boot" grep -qE '^net/ipv4/conf/all/log_martians=0' /etc/ufw/sysctl.conf
 t "planted crontab line listed"           grep -q "NON-DEFAULT /etc/crontab line: \* \* \* \* \* root pearl" "$RUN/findings.txt"
-t "unowned binary listed"                 grep -q "executable not from any package: /usr/local/bin/pearl" "$RUN/findings.txt"
+t "reverse-shell cron line disabled"      grep -q "^# cpkit disabled (reverse shell): \* \* \* \* \* root pearl" /etc/crontab
+f "reverse shell still in place"          test -e /usr/local/bin/pearl
+t "reverse shell kept in quarantine"      test -f "$RUN/quarantine/pearl"
+t "unowned binary listed"                 grep -q "executable not from any package: /usr/local/bin/oddtool" "$RUN/findings.txt"
+f "sudoers !authenticate still live"      grep -qE '^[[:space:]]*Defaults.*!authenticate' /etc/sudoers.d/README
+t "sudoers still valid"                   visudo -c
+t "sys has no login shell"                sh -c "getent passwd sys | grep -qE '(nologin|false)$'"
+f "/var/mail world-writable"              sh -c "[ \$(( 0\$(stat -c %a /var/mail) & 2 )) -ne 0 ]"
 
 echo "== verify: authorized things untouched"
 t "santa still exists"                    id santa

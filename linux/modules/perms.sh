@@ -35,6 +35,11 @@ mod_perms() {
     while read -r f; do
         cp_act perms "chmod o-w $f (now $(stat -c '%a' "$f"))" "anyone could rewrite this config" chmod o-w "$f"
     done < <(find /etc -xdev -type f -perm -0002 2>/dev/null)
+    # World-writable directories without the sticky bit: anyone can replace files inside
+    # (ETH007: /etc/dovecot/conf.d, /etc/dovecot/private, /var/mail). /tmp-style dirs have the sticky bit.
+    while read -r f; do
+        cp_act perms "chmod o-w $f/ (now $(stat -c '%a' "$f"))" "anyone could replace the files in it" chmod o-w "$f"
+    done < <(find /etc /var/mail /var/spool /var/www /opt /srv -xdev -type d -perm -0002 ! -perm -1000 2>/dev/null)
     find /usr /bin /sbin -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
         cp_finding perms "world-writable system file: $f"
     done
