@@ -29,10 +29,21 @@ integ_locked_files() {
     awk '{ f = $1; sub(/^[^ ]+[ \t]+/, "", $0) } f ~ /^[-A-Za-z]+$/ && f ~ /[ia]/ { print $0 }'
 }
 
+# Exact installed version first: restores the files without upgrading anything, and works when the
+# newer version in the index is already gone from the mirror (Debian 11 after EOL: 404 on security.d.o).
 _integ_reinstall() {
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall "$1" >/dev/null 2>&1 \
-        || DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "$1" >/dev/null 2>&1
+    local v; v="$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null)"
+    export DEBIAN_FRONTEND=noninteractive
+    { [ -n "$v" ] && apt-get install -y --reinstall "$1=$v" >/dev/null 2>&1; } \
+        || apt-get install -y --reinstall "$1" >/dev/null 2>&1 \
+        || apt-get install -y --only-upgrade "$1" >/dev/null 2>&1
     [ -z "$(dpkg -V "$1" 2>/dev/null | integ_changed_files)" ]   # verify, don't trust the exit code
+}
+
+# 0 when pam_deny.so in DIR is byte-identical to pam_permit.so (ETH007 image): every "deny" lets you in.
+integ_pam_deny_is_permit() {
+    local d="$1"
+    [ -f "$d/pam_deny.so" ] && [ -f "$d/pam_permit.so" ] && cmp -s "$d/pam_deny.so" "$d/pam_permit.so"
 }
 
 mod_integrity() {
@@ -48,6 +59,10 @@ mod_integrity() {
             cp_finding integrity "locked (chattr +i/+a) file: $f  - check it, then: chattr -i -a '$f'"
         fi
     done < <({ lsattr -d $CP_UNLOCK_FILES 2>/dev/null; lsattr -R /etc /var/spool/cron 2>/dev/null; } | integ_locked_files | sort -u)
+
+    for f in /lib/*/security /usr/lib/*/security /lib/security; do
+        integ_pam_deny_is_permit "$f" && cp_finding integrity "$f/pam_deny.so IS A COPY OF pam_permit.so - failed logins are let in. Reinstall libpam-modules (this module does it)"
+    done
 
     # 2. Package files edited after install (~1 min).
     echo "  checking package file checksums (dpkg -V, about a minute)..."

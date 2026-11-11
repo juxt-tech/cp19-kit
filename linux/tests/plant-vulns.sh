@@ -45,6 +45,9 @@ chage -d 2024-01-03 prancer   # RESET_PASSWORDS skips passwords changed today; i
 echo '# tampered by the image maker' >> /usr/sbin/ufw
 printf '#!/bin/sh\nexec perl -e "reverse shell"\n' > /usr/local/bin/pearl; chmod +x /usr/local/bin/pearl
 echo '* * * * * root pearl' >> /etc/crontab
+# pam_deny.so replaced by pam_permit.so (ETH007): a wrong password gets in.
+secdir="$(dirname "$(find / -xdev -name pam_permit.so -path '*security*' 2>/dev/null | head -1)")"
+cp "$secdir/pam_permit.so" "$secdir/pam_deny.so"
 
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
