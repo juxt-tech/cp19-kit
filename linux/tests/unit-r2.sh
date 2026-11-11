@@ -63,3 +63,13 @@ echo "== r2: media report skips vendor code and the harness kit dir"
 eq "vendor + node_modules + /root/cpkit dropped" \
    "$(printf '/var/www/html/vendor/x/Password.php\n/srv/app/node_modules/p/password.js\n/root/cpkit/linux/modules/passwords.sh\n/home/bob/passwords.txt\n' | CP_KIT_ROOT=/root/cpkit media_not_kit)" \
    "/home/bob/passwords.txt"
+
+echo "== r2: ufw's own sysctl file (slash keys) undoes ours at boot"
+u="$T/ufw-sysctl.conf"
+printf '#net/ipv4/tcp_syncookies=0\nnet/ipv4/conf/all/log_martians=0\nnet/ipv4/conf/default/log_martians=0\nnet/ipv4/icmp_echo_ignore_broadcasts=1\n' > "$u"
+eq   "slash-form conflicts found"  "$(plan_sysctl_conflicts "$u" | cut -f1 | xargs)" "net.ipv4.conf.all.log_martians net.ipv4.conf.default.log_martians"
+_sysctl_comment "$u" net.ipv4.conf.all.log_martians
+_sysctl_comment "$u" net.ipv4.conf.default.log_martians
+yes_ "slash-form line commented"   grep -q '^# cpkit disabled: net/ipv4/conf/all/log_martians=0' "$u"
+yes_ "matching slash line untouched" grep -qx 'net/ipv4/icmp_echo_ignore_broadcasts=1' "$u"
+eq   "no conflict left"            "$(plan_sysctl_conflicts "$u" | wc -l | tr -d ' ')" "0"

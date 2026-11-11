@@ -39,6 +39,7 @@ t "old password not expired by max 90 (santa account check)" sh -c "echo 'Santa#
 t "edited ufw reinstalled (dpkg -V clean)"  sh -c "[ -z \"\$(dpkg -V ufw | awk '\$1 ~ /^..5/ && \$2 != \"c\"')\" ]"
 t "edited ufw listed in findings"         grep -q "EDITED package file: /usr/sbin/ufw" "$RUN/findings.txt"
 t "pam_deny.so restored (not a copy of pam_permit.so)" sh -c "d=\$(dirname \$(find / -xdev -name pam_permit.so -path '*security*' | head -1)); ! cmp -s \$d/pam_deny.so \$d/pam_permit.so"
+f "ufw's sysctl.conf still turns martian logging off at boot" grep -qE '^net/ipv4/conf/all/log_martians=0' /etc/ufw/sysctl.conf
 t "planted crontab line listed"           grep -q "NON-DEFAULT /etc/crontab line: \* \* \* \* \* root pearl" "$RUN/findings.txt"
 t "unowned binary listed"                 grep -q "executable not from any package: /usr/local/bin/pearl" "$RUN/findings.txt"
 

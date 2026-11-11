@@ -16,6 +16,7 @@ CP_SYSCTL=(
     "net.ipv4.conf.all.rp_filter=1"
     "net.ipv4.conf.default.rp_filter=1"
     "net.ipv4.conf.all.log_martians=1"
+    "net.ipv4.conf.default.log_martians=1"
     "net.ipv6.conf.all.accept_redirects=0"
     "net.ipv6.conf.default.accept_redirects=0"
     "net.ipv6.conf.all.accept_source_route=0"
@@ -34,13 +35,15 @@ _sysctl_write() {
 
 # Pure: uncommented lines in FILE that set one of our keys to a different value.
 # Prints "KEY<TAB>original line". /etc/sysctl.conf loads AFTER sysctl.d, so these would win.
+# Keys may be written with slashes (net/ipv4/...): /etc/ufw/sysctl.conf does, and ufw applies
+# it every time it starts - stock ufw sets log_martians=0, undoing ours at each boot.
 plan_sysctl_conflicts() {
     local file="$1" kv k want line lk lv
     [ -f "$file" ] || return 0
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ "$line" == *=* ]] || continue
-        lk="$(echo "${line%%=*}" | tr -d '[:space:]')"; lv="$(echo "${line#*=}" | tr -d '[:space:]')"
+        lk="$(echo "${line%%=*}" | tr -d '[:space:]' | tr '/' '.')"; lv="$(echo "${line#*=}" | tr -d '[:space:]')"
         for kv in "${CP_SYSCTL[@]}" "net.ipv4.ip_forward=0"; do
             k="${kv%%=*}"; want="${kv#*=}"
             [ "$lk" = "$k" ] && [ "$lv" != "$want" ] && printf '%s\t%s\n' "$k" "$line"
@@ -48,8 +51,8 @@ plan_sysctl_conflicts() {
     done < "$file"
 }
 
-_sysctl_comment() {  # FILE KEY  - comment out every live line setting KEY
-    local re; re="$(printf '%s' "$2" | sed 's/\./\\./g')"
+_sysctl_comment() {  # FILE KEY  - comment out every live line setting KEY (dot or slash form)
+    local re; re="$(printf '%s' "$2" | sed 's/\./[.\/]/g')"
     sed -i -E "s|^([[:space:]]*${re}[[:space:]]*=.*)$|# cpkit disabled: \1|" "$1"
 }
 
@@ -69,7 +72,7 @@ mod_sysctl() {
         cp_act sysctl "write $CP_SYSCTL_FILE and run sysctl --system" "ASLR, SYN cookies, no redirects/source routing" _sysctl_write
     fi
     # Other files that would override ours (sysctl.conf loads last).
-    for f in /etc/sysctl.conf /etc/sysctl.d/*.conf /run/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf; do
+    for f in /etc/sysctl.conf /etc/sysctl.d/*.conf /run/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf /etc/ufw/sysctl.conf; do
         [ -f "$f" ] && [ "$f" != "$CP_SYSCTL_FILE" ] || continue
         while IFS=$'\t' read -r k line; do
             [ -n "$k" ] || continue
