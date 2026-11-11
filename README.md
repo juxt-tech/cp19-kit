@@ -40,7 +40,7 @@ sudo bash linux/harden.sh --apply                                               
 Run folder: `/root/cpkit-runs/<time>/`
 
 ## Modules
-**Linux:** users · passwords · firewall · ssh · sysctl · perms · services · software · updates · persistence (report) · media (report)
+**Linux:** users · sources · integrity · passwords · firewall · ssh · sysctl · perms · services · software · updates · persistence (report) · media (report)
 **Windows:** Users · AccountPolicy · AuditPolicy · SecurityOptions · Firewall · Defender · Services · Remote · Shares · Features · Updates · Software (report) · Persistence (report) · Media (report) · Server (Server only: AD, DNS, IIS)
 
 ## Undo
