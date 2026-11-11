@@ -58,7 +58,8 @@ mod_integrity() {
         else
             cp_finding integrity "locked (chattr +i/+a) file: $f  - check it, then: chattr -i -a '$f'"
         fi
-    done < <({ lsattr -d $CP_UNLOCK_FILES 2>/dev/null; lsattr -R /etc /var/spool/cron 2>/dev/null; } | integ_locked_files | sort -u)
+    done < <({ lsattr -d $CP_UNLOCK_FILES 2>/dev/null; lsattr -R /etc /var/spool/cron 2>/dev/null
+               lsattr /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /bin /sbin 2>/dev/null; } | integ_locked_files | sort -u)
 
     for f in /lib/*/security /usr/lib/*/security /lib/security; do
         integ_pam_deny_is_permit "$f" && cp_finding integrity "$f/pam_deny.so IS A COPY OF pam_permit.so - failed logins are let in. Reinstall libpam-modules (this module does it)"

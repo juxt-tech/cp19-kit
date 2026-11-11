@@ -40,6 +40,7 @@ _persist_quarantine() {
     tmp="$(mktemp)"
     awk -v l="$line" '$0 == l { print "# cpkit disabled (reverse shell): " $0; next } { print }' /etc/crontab > "$tmp" && cat "$tmp" > /etc/crontab
     rm -f "$tmp"
+    chattr -i -a "$path" 2>/dev/null   # ETH007: the reverse shell itself was chattr +i
     mv "$path" "$q/" && chmod a-x "$q/$(basename "$path")"
 }
 

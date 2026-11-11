@@ -25,6 +25,24 @@ apps_php_plan() {
 apps_roundcube_installer_on()  { grep -qE "^[[:space:]]*\\\$config\['enable_installer'\][[:space:]]*=[[:space:]]*true" "$1" 2>/dev/null; }
 apps_roundcube_installer_off() { sed -i -E "s/^([[:space:]]*\\\$config\['enable_installer'\][[:space:]]*=[[:space:]]*)true/\1false/" "$1"; }
 
+# Roundcube talking plain IMAP to a local Dovecot (imap_host 'localhost:143' / default_host 'localhost').
+apps_roundcube_plain_imap() {
+    grep -qE "^[[:space:]]*\\\$config\['(imap_host|default_host)'\][[:space:]]*=[[:space:]]*'(localhost|127\.0\.0\.1)(:143)?'" "$1" 2>/dev/null
+}
+# Switch to implicit TLS on 993 with peer checks off (Dovecot's cert is self-signed snakeoil).
+# Verified on ETH007: real webmail login still works, "SSL between webmail and Dovecot" scored.
+apps_roundcube_to_ssl() {
+    sed -i -E "s#^([[:space:]]*\\\$config\['imap_host'\][[:space:]]*=[[:space:]]*)'(localhost|127\.0\.0\.1)(:143)?'#\1'ssl://\2:993'#;
+               s#^([[:space:]]*\\\$config\['default_host'\][[:space:]]*=[[:space:]]*)'(localhost|127\.0\.0\.1)(:143)?'#\1'ssl://\2'#" "$1"
+    grep -q "default_host'\] *= *'ssl://" "$1" && ! grep -q "default_port'\]" "$1" && echo "\$config['default_port'] = 993;" >> "$1"
+    grep -q "imap_conn_options'\]" "$1" || \
+        echo "\$config['imap_conn_options'] = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]];  // cpkit: self-signed dovecot cert" >> "$1"
+}
+_apps_roundcube_ssl() {
+    apps_roundcube_to_ssl "$1"
+    if command -v php >/dev/null && ! php -l "$1" >/dev/null 2>&1; then echo "       php -l failed - restoring $1"; _apps_restore "$1"; return 1; fi
+}
+
 # ---------- appliers (validate or restore) ----------
 _apps_restore() { local f; for f in "$@"; do [ -e "$CP_RUN/backup$f" ] && cp -a "$CP_RUN/backup$f" "$f"; done; }
 
@@ -111,7 +129,17 @@ mod_apps() {
         if [ "$(doveconf -h auth_debug_passwords 2>/dev/null)" = yes ] && [ -f "$f" ]; then
             cp_backup "$f"; cp_act apps "set auth_debug_passwords = no in $f" "logs passwords in clear text" _apps_dovecot_set "$f" auth_debug_passwords no
         fi
-        cp_finding apps "webmail -> Dovecot: README may ask for SSL there too (Roundcube: imap_host 'tls://localhost:143' + imap_conn_options verify_peer false for a self-signed cert). Test a webmail login after."
+        # Webmail -> Dovecot over SSL, only once Dovecot really serves IMAPS on 993.
+        if [ "$(doveconf -h ssl 2>/dev/null)" != no ] && timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/993' 2>/dev/null; then
+            while read -r f; do
+                apps_roundcube_plain_imap "$f" || continue
+                cp_backup "$f"
+                cp_act apps "Roundcube -> Dovecot over SSL (ssl://localhost:993) in $f" "webmail logins cross IMAP in clear text" _apps_roundcube_ssl "$f"
+                cp_finding apps "Roundcube now uses ssl://localhost:993 - log in to webmail once to check (restore: $CP_RUN/backup$f)"
+            done < <(find /var/www /usr/share/roundcube /etc/roundcube -maxdepth 3 -name config.inc.php 2>/dev/null)
+        elif [ "$CP_MODE" = audit ] && [ "$(doveconf -h ssl 2>/dev/null)" = no ]; then
+            echo "  (after dovecot ssl is on, a Roundcube on plain localhost:143 is switched to ssl://localhost:993)"
+        fi
     fi
     [ "$any" = 0 ] && echo "  ok   no README-critical service with app settings here (apache2/postfix/dovecot)"
     return 0
