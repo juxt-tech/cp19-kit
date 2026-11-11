@@ -4,6 +4,8 @@ Audit-first, README-driven hardening scripts and checklists for CyberPatriot 19.
 
 > **Windows status:** the Windows/Server script passes 192 unit tests and has run end to end on the District 13 practice image (every module applied), but **never on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
 
+> **Linux status:** ran end to end on a real practice image (ETH007 "Debian 11 Mock Semifinals", Aeacus): the kit alone takes it from 0 to **44/100 with 0 penalties**, critical services (Dovecot, Postfix, Apache, webmail) up throughout, second run changes nothing, survives a reboot. 176 unit tests + a planted-vulnerability scenario on Mint 21, Debian 12 and Ubuntu 22.04. Lessons: [checklists/linux.md](checklists/linux.md) section 7.
+
 | OS | Script | Checklist |
 |---|---|---|
 | Windows 10 / 11 | `windows/harden.ps1` | [checklists/windows.md](checklists/windows.md) |

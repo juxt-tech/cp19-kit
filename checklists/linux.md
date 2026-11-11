@@ -122,6 +122,21 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - Disabling IPv6 when the README or a service uses it (old checklists do this by default: only do it if asked).
 - Deleting media/files before answering forensics.
 - Firewall rules that block the critical service's port.
+- Setting a password max age by hand on an old image without `chage -d today`: every password expires at once and services that log in through PAM (Dovecot/webmail, FTP, Samba) reject users. The kit handles it.
+- Changing the auto-login user's password (README usually says you don't have to; it can lock you out).
 - Undo: revert the snapshot, or copy back from `/root/cpkit-runs/<time>/backup/`.
+
+</details>
+
+<details>
+<summary><b>7. Lessons from the practice run</b> (ETH007 Debian 11 image: kit alone 0 → 44/100, 0 penalties)</summary>
+
+- **Forensics first, then the kit.** The persistence module offers to quarantine reverse-shell programs: answer the questions that mention them before you say yes. Quarantined files stay in `/root/cpkit-runs/<time>/quarantine/`.
+- **After the `apps` module, log in to webmail once** (and test any other critical service yourself). The kit checks configs, not your exact setup.
+- **The score report lags.** It is rewritten about once a minute; right after a reboot the first pass can show a critical service as "stopped" before it has started. Wait two refreshes before panicking.
+- **"FAILED" in the kit output means look at it**: on that image it was a `chattr +i` locked file. `lsattr FILE`, then `sudo chattr -i -a FILE`.
+- **Image makers edit real tools** (ufw that did nothing, `pam_deny.so` replaced by `pam_permit.so`). The integrity module checks every package file; read its `EDITED package file` findings.
+- **What the kit cannot do:** forensics questions, README-specific app settings (read the README twice), and updates on an end-of-life OS (Debian 11's security mirror is gone; Debian 12 is fine).
+- Remaining points after the kit are hand work: findings.txt (section 4), section 5, and the README.
 
 </details>

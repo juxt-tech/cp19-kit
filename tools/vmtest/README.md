@@ -46,6 +46,17 @@ Drive it from the host:
 Always pass `-All` / `-Module` (Windows) or `--all` / `--module` (Linux): there is nobody to answer the menu.
 Results land in `%USERPROFILE%\cpvmtest\vms\<vm>\r\` (`out-<n>.txt`, uploads from `up`, `hb.json`).
 
+Linux batch (one job per module, health + score after each, then a second apply-all that must show 0 changes):
+
+```powershell
+.\tools\vmtest\vmt.ps1 stage -Path C:\path\to\image-config.txt
+.\tools\vmtest\linux-batch.ps1 -Vm debian -Config image-config.txt -Pw 'NEW_PASSWORD' -Tag run1   # -> %USERPROFILE%\cpvmtest\batch-run1.txt
+```
+
+`guest/health.sh` (served at `/g/health.sh`): `health PW` checks critical services, the Aeacus scorer, a Dovecot
+and plain-IMAP login, webmail HTTP, SMTP banner, ufw and expired passwords; `score 150` waits for the next report
+and lists fixed items. Set `CP_HEALTH_SERVICES` / `CP_HEALTH_USER` for another image.
+
 ## Notes
 
 - `Run-Kit` / `run_kit` run the kit **as the signed-in user** (`USERNAME` / `SUDO_USER`), so the kit
@@ -57,6 +68,10 @@ Results land in `%USERPROFILE%\cpvmtest\vms\<vm>\r\` (`out-<n>.txt`, uploads fro
 - `vmrun start` must run detached (`Start-Process`). Run from a shell it can hang, and killing that shell powers the VM off. After `revertToSnapshot`, wait for vmware.exe to exit before starting.
 - District 13 only: `CSSClient_Restarter.bat` restarts the scorer every 60 s and a pass takes ~135 s on a slow VM, so reports rarely finish. For testing, kill that cmd.exe (not CSSClient): `Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | ? CommandLine -match CSSClient_Restarter | % { taskkill /PID $_.ProcessId /F }`.
 - A snapshot revert or blue screen rolls back the agent's record of finished jobs; the server skips any job with a stored result, so nothing is replayed.
+- Linux agent snapshot: take it **powered off** (job `(sleep 3; systemctl poweroff) &`, then `vmrun snapshot`): seconds instead of ~15 min, and the auto-login user is back after boot.
+- After a revert + boot, the scorer's first pass can report a critical service stopped (it ran before the service started). Judge only later passes.
+- Git Bash: a hook blocks commands containing strings like `x:ro` or `debian:12` (they look like drive letters). Put docker commands in a script file.
+- Practice images are often past end of life (Debian 11): `apt-get upgrade` 404s on security.debian.org. Not a kit bug.
 - Remove: `Unregister-ScheduledTask cpkit-test-agent -Confirm:$false; Remove-Item C:\ProgramData\cpagent -Recurse -Force`
   / `sudo systemctl disable --now cpkit-test-agent; sudo rm -rf /var/lib/cpagent /usr/local/sbin/cpkit-test-agent /etc/systemd/system/cpkit-test-agent.service`.
 - Tested: Windows agent on a Windows 10 host (jobs, errors, uploads, timeout kills the process tree,

@@ -67,3 +67,31 @@ Source: the club's "Practice Images" sheet (Windows tab). Only the public answer
 | Princeton-Plainsboro (x1nni) | Win11 | Defender default action for severe threats ≠ ignore, script scanning, RDP secure RPC + SSL, Remote Management Users, mimikatz driver, AnyDesk/McAfee, unencrypted medical records, ASR "Win32 imports from Office macros", task named like an Edge update task. |
 
 Kit changes from this: see BACKLOG "Practice-image answer keys". Not automated on purpose: ValidateAdminCodeSignatures (blocks unsigned installers), ASR rules (Office only), BitLocker, Firefox prefs, folder ACLs → checklist.
+
+## 8. Linux practice images (2026-11-09/10)
+Sources read: the club sheet's Linux tab (no Debian 12 image exists on it) and four public answer keys:
+Age of Pirates (Mint 22, 60 items, gooseman), 1984 (Mint 22.3, 44 items, ml2322), Narnia / System Hardening 6
+(Ubuntu 22, eth007), Bloons TD 6 (Debian 10, StageKing). Then one image run end to end with the kit:
+**ETH007's Arena / "Debian 11 Mock Semifinals 2024"** (Aeacus, 46 issues, no public key; critical: dovecot,
+postfix, apache2; Roundcube webmail).
+
+| What the image had | Kit before | Kit now |
+|---|---|---|
+| Passwords last changed ~1,000 days earlier | `chage -M 90` expired them all at once: Dovecot (PAM) rejected logins (reproduced) | old passwords also get `chage -d today` |
+| Live Kali repo in sources.list (2 pts) | reported only; apt-get update failed | commented out |
+| `/usr/sbin/ufw` edited to open a browser and do nothing | logged 9 firewall changes "done", ufw stayed off | integrity: dpkg -V + reinstall; firewall checks `ufw status` |
+| `pam_deny.so` = copy of `pam_permit.so` ("PAM backdoor", 3 pts) | not seen | reinstall `libpam-modules=<installed version>` (newer one 404s on the EOL mirror) |
+| `/etc/crontab` chattr +i +a with `* * * * * root pearl`; `/usr/bin/pearl` = pentestmonkey Perl reverse shell, also +i ("perl backdoor", 3 pts) | not reported | locked files unlocked; non-default crontab lines + unowned executables reported; reverse-shell program quarantined (y/N) |
+| `Defaults !authenticate` in `/etc/sudoers.d/README` (2 pts) | only NOPASSWD was searched | commented out, `visudo -c` |
+| `sys` with `/bin/sh` (2 pts), lightdm `xserver-allow-tcp = True` (2 pts) | reported / not seen | fixed |
+| dovecot.conf + conf.d + private world-writable (2 pts), /var/mail 2777 | files only | files and sticky-less dirs |
+| Apache ServerTokens OS, TraceEnable On, Indexes; PHP expose_php On; Postfix VRFY on; Dovecot ssl=no; Roundcube installer on and plain IMAP | nothing (no app module) | `apps` module: each validated and rolled back; Roundcube -> `ssl://localhost:993` (real webmail login checked) |
+| Stock `/etc/ufw/sysctl.conf` sets log_martians=0 | point lost at every reboot | sysctl also cleans ufw's slash-form keys |
+| 345 x 404 from security.debian.org (Debian 11 EOL) | whole upgrade aborted | retry with --fix-missing; --with-new-pkgs for the kernel |
+
+Score: 0 -> 16 (first run) -> 23 -> **44/100, 0 penalties**, second run 0 changes, holds after reboot.
+Left on the image: 3 forensics questions (Roundcube drafts/contacts, an assembly puzzle) and updates the EOL mirror can't serve.
+
+From the answer keys, still hand work (checklist): Firefox settings, nproc limit, IPv6, LightDM autologin
+timeout, `apt-mark hold`, broken sudo recovery via `pkexec`, cron in three places, `iptables -F`, SFTP
+`ForceCommand`/`ChrootDirectory`, group creation from the README, kernel needing a reboot.
