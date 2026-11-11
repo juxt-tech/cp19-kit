@@ -12,6 +12,8 @@ declare -A CP_FW_PORTS=(
 )
 
 _fw_install() { DEBIAN_FRONTEND=noninteractive apt-get install -y ufw; }
+# A tampered ufw exits 0 without doing anything (ETH007 image): check the result.
+_fw_enable() { ufw --force enable && ufw status | grep -q '^Status: active'; }
 
 mod_firewall() {
     cp_header "FIREWALL  (ufw)"
@@ -39,7 +41,10 @@ mod_firewall() {
     echo "$status" | grep -qE "^Logging: on" && echo "  ok   logging on" \
         || cp_act firewall "ufw logging on" "keeps a record of blocked traffic" ufw logging on
     echo "$status" | grep -q "^Status: active" && echo "  ok   ufw active" \
-        || cp_act firewall "ufw --force enable" "turn the firewall on" ufw --force enable
+        || cp_act firewall "ufw --force enable" "turn the firewall on" _fw_enable
+    if [ -n "$(dpkg -V ufw 2>/dev/null | awk '$1 ~ /^..5/ && $2 != "c"')" ]; then
+        cp_finding firewall "/usr/sbin/ufw was EDITED (dpkg -V) - its commands may only pretend to work. Run the integrity module or: sudo apt-get install --reinstall ufw"
+    fi
     echo "$status" | grep -E "ALLOW" | grep -vE "^(22|21|80|443|139|445)" | while read -r l; do
         cp_finding firewall "existing allow rule: $l  (needed by README?)"
     done

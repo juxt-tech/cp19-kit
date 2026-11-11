@@ -18,9 +18,35 @@ persist_unit_suspect() {
     return 0
 }
 
+# Pure. Lines of an /etc/crontab that Debian does not ship (variables, comments, run-parts/anacron
+# lines skipped). ETH007 image: "* * * * * root pearl" (a Perl reverse shell) in a chattr-locked crontab.
+persist_crontab_extra() {
+    grep -Ev '^[[:space:]]*(#|$|[A-Za-z_]+=)' "$1" 2>/dev/null | grep -Ev 'run-parts --report /etc/cron\.(hourly|daily|weekly|monthly)'
+}
+
+# Executables in the bin dirs that no package owns (each real dir once: /bin = /usr/bin on merged-usr).
+_persist_unowned_bins() {
+    local owned="$1" d r seen="" f n=0
+    for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+        r="$(readlink -f "$d" 2>/dev/null)"; [ -d "$r" ] || continue
+        cp_in_list "$r" "$seen" && continue; seen="$seen $r"
+        while read -r f; do
+            grep -qxF "$f" "$owned" && continue
+            if [ -L "$f" ]; then   # update-alternatives links, or links to a packaged file
+                case "$(readlink "$f")" in /etc/alternatives/*) continue ;; esac
+                grep -qxF "$(readlink -f "$f")" "$owned" && continue
+            fi
+            case "$f" in /usr/local/sbin/cpkit-test-agent) continue ;; esac   # practice harness, reported elsewhere
+            cp_finding persistence "executable not from any package: $f  ($(file -b "$f" 2>/dev/null | cut -c1-60))"
+            n=$((n+1))
+        done < <(find "$r" -maxdepth 1 \( -type f -o -type l \) -perm -u+x 2>/dev/null | sort)
+    done
+    [ "$n" = 0 ] && echo "  ok   every executable in the bin dirs belongs to a package"
+}
+
 _persist_units() {
     local f owned n=0
-    owned="$(mktemp)"; cat /var/lib/dpkg/info/*.list 2>/dev/null | sort -u > "$owned"
+    owned="$(mktemp)"; cp_owned_files > "$owned"
     while read -r f; do
         persist_unit_suspect "$f" || continue
         grep -qxF "$f" "$owned" && continue          # shipped by a package
@@ -29,12 +55,10 @@ _persist_units() {
         else cp_finding persistence "unit not from a package: $f  ($x)"; fi
         n=$((n+1))
     done < <(find /etc/systemd/system \( -name '*.service' -o -name '*.timer' -o -name '*.socket' \) 2>/dev/null | sort)
-    # Package unit files changed after install (a planted ExecStart in a real service).
-    find /lib/systemd/system /usr/lib/systemd/system -name '*.service' -newer /etc/hostname 2>/dev/null | while read -r f; do
-        grep -qxF "$f" "$owned" || cp_finding persistence "unit in system dir not from a package: $f  ($(grep -m1 '^ExecStart' "$f" 2>/dev/null))"
-    done
-    rm -f "$owned"
     [ "$n" = 0 ] && echo "  ok   no hand-made units in /etc/systemd/system"
+    # Edited package units (a planted ExecStart in a real service) show up in the integrity module (dpkg -V).
+    _persist_unowned_bins "$owned"
+    rm -f "$owned"
 }
 
 mod_persistence() {
@@ -43,6 +67,9 @@ mod_persistence() {
     for u in $(cut -d: -f1 /etc/passwd); do
         l="$(crontab -l -u "$u" 2>/dev/null | grep -Ev '^\s*(#|$)')"
         [ -n "$l" ] && while read -r line; do cp_finding persistence "crontab of $u: $line"; done <<< "$l"
+    done
+    persist_crontab_extra /etc/crontab | while read -r l; do
+        cp_finding persistence "NON-DEFAULT /etc/crontab line: $l  (what does it run? remove after forensics)"
     done
     for f in /etc/crontab /etc/cron.d/* /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* /etc/cron.monthly/* /etc/anacrontab; do
         [ -f "$f" ] || continue

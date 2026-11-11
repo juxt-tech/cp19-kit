@@ -3,7 +3,7 @@
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null
-apt-get install -y -qq sudo passwd login john nmap vsftpd cups openssh-server cron pamtester procps iproute2 iptables >/dev/null 2>&1
+apt-get install -y -qq sudo passwd login john nmap vsftpd cups openssh-server cron pamtester procps iproute2 iptables ufw file >/dev/null 2>&1
 
 mk() { useradd -m -s /bin/bash "$1"; echo "$1:$2" | chpasswd; }
 mk santa   'Santa#2026pass';  usermod -aG sudo santa     # authorized admin
@@ -40,6 +40,11 @@ echo 'deb http://http.kali.org/kali kali-rolling main non-free contrib' > /etc/a
 chmod 777 /etc/vsftpd.conf
 chage -d 2024-01-03 santa
 chage -d 2024-01-03 prancer   # RESET_PASSWORDS skips passwords changed today; images are built months ahead
+# Edited security tool + reverse-shell cron (ETH007: ufw edited, "* * * * * root pearl" in /etc/crontab).
+# (chattr +i needs CAP_LINUX_IMMUTABLE, which containers lack: the lock part is unit-tested only.)
+echo '# tampered by the image maker' >> /usr/sbin/ufw
+printf '#!/bin/sh\nexec perl -e "reverse shell"\n' > /usr/local/bin/pearl; chmod +x /usr/local/bin/pearl
+echo '* * * * * root pearl' >> /etc/crontab
 
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa

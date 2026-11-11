@@ -14,10 +14,11 @@ CP_KIT_ROOT="$(dirname "$KIT")"   # media report skips the kit's own download
 source "$KIT/lib/common.sh"
 for m in "$KIT"/modules/*.sh; do source "$m"; done
 
-ORDER=(users sources passwords firewall ssh sysctl perms services software updates persistence media)
+ORDER=(users sources integrity passwords firewall ssh sysctl perms services software updates persistence media)
 declare -A WHAT=(
     [users]="accounts + sudo match the README; lock root; guest login off"
-    [sources]="re-enable official apt sources + apt-get update (needed before installs)"
+    [sources]="re-enable official apt sources, drop Kali/Parrot repos + apt-get update"
+    [integrity]="unlock chattr-locked files; reinstall edited security tools (ufw, PAM, sudo...)"
     [passwords]="password age/length/complexity/history; lockout after 5 fails"
     [firewall]="ufw on: deny in, allow out, open critical-service ports"
     [ssh]="harden sshd_config (only if ssh is critical)"

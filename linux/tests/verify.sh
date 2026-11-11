@@ -36,6 +36,11 @@ f "/etc/vsftpd.conf world-writable"       sh -c "[ \$(( 0\$(stat -c %a /etc/vsft
 t "prancer password reset to NEW_PASSWORD" sh -c "echo 'Cyb3rP@triot!2026' | pamtester login prancer authenticate"
 t "old password not expired by max 90 (santa account check)" sh -c "echo 'Santa#2026pass' | pamtester login santa authenticate acct_mgmt"
 
+t "edited ufw reinstalled (dpkg -V clean)"  sh -c "[ -z \"\$(dpkg -V ufw | awk '\$1 ~ /^..5/ && \$2 != \"c\"')\" ]"
+t "edited ufw listed in findings"         grep -q "EDITED package file: /usr/sbin/ufw" "$RUN/findings.txt"
+t "planted crontab line listed"           grep -q "NON-DEFAULT /etc/crontab line: \* \* \* \* \* root pearl" "$RUN/findings.txt"
+t "unowned binary listed"                 grep -q "executable not from any package: /usr/local/bin/pearl" "$RUN/findings.txt"
+
 echo "== verify: authorized things untouched"
 t "santa still exists"                    id santa
 t "santa still in sudo"                   sh -c "id -nG santa | grep -qw sudo"

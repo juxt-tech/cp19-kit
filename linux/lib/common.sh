@@ -169,6 +169,19 @@ cp_act() {
 
 cp_header() { echo; echo "===== $1 ====="; }
 
+# Pure. Paths on stdin -> each path plus its merged-usr twin (/lib <-> /usr/lib, /bin <-> /usr/bin,
+# /sbin <-> /usr/sbin). dpkg records one spelling; find on a merged-usr system can return the other.
+pkg_path_variants() {
+    awk '{ print }
+         /^\/(lib|lib64|bin|sbin)\// { print "/usr" $0 }
+         /^\/usr\/(lib|lib64|bin|sbin)\// { print substr($0, 5) }'
+}
+
+# Every file any package owns, both spellings, one per line (sorted, for grep -xF).
+cp_owned_files() {
+    cat /var/lib/dpkg/info/*.list 2>/dev/null | pkg_path_variants | sort -u
+}
+
 # Current value of KEY in a "KEY value" / "KEY=value" / "KEY = value" file (uncommented lines only).
 cp_conf_get() {
     local file="$1" key="$2"
