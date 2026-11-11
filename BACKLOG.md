@@ -49,4 +49,10 @@ When the list is empty, the loop runs a discovery pass (shellcheck, PSScriptAnal
 - [ ] **CasePortal returns HTTP 500** after the kit (before and after Server; https fails too). The README says it must stay up. Not yet checked on the untouched snapshot: if the kit broke it, find the module (suspects: Firewall, SecurityOptions, Services, TLS settings, svc account). May explain 'Critical services stopped'.
 - [ ] Full run with RESET_PASSWORDS: no score or clean re-audit yet (re-audit needed 8+ min with the scorer running and hit the test limit).
 - [ ] TermService: a live stop left the session up, but keyboard/mouse were not tested. If they survive, RDP services can go back to a normal stop + disable.
-- [ ] Linux practice image (Debian 12 for R2) end-to-end with the harness.
+- [ ] Linux practice image (Debian 12 for R2) end-to-end with the harness. **In progress 2026-11-10 on ETH007 Arena (Debian 11 Mock Semifinals 2024, Aeacus, 46 issues; no Debian 12 image exists on the club sheet).** First real-image audit ran clean (20 s, 0 changes). Found + fixed before any apply:
+  - **`chage -M 90` would have broken webmail logins** (reproduced): image passwords were 1,043 days old, so max 90 expired them at once; Dovecot authenticates through PAM account checks and rejected `sadness` until reverted. Now an old password also gets `chage -d today`.
+  - **Planted Kali repo** (`deb http://http.kali.org/kali kali-rolling`) made `apt-get update` fail, so no updates ever installed; with a key it would turn upgrade into the OS change the README forbids. The sources module now comments out Kali/Parrot lines (other unknown repos still report only).
+  - **RESET_PASSWORDS** now works on Linux (README user `sadness` had password `sad`); never the signed-in/auto-login user, skips passwords changed today.
+  - Scorer protection now also matches Aeacus names (`CSSClient` unit, `phocus` binary).
+  - World-writable files under /etc are fixed (`chmod o-w`; image had dovecot.conf 777).
+  - Noise cut: 30 false "service file newer than install" lines (enable symlinks) replaced by "unit not from a package"; vendor/node_modules code dropped from the "password" file report.

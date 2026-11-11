@@ -30,11 +30,17 @@ t "blitzen no longer UID 0"               sh -c "[ \$(id -u blitzen) -ge 1000 ]"
 t "sysctl.conf override commented out"    grep -q "^# cpkit disabled: net.ipv4.ip_forward=1" /etc/sysctl.conf
 t "sshd keys inserted above Match block"  sh -c "awk '/^Match/{m=NR} /^UsePAM yes/{u=NR} END{exit !(u && u<m)}' /etc/ssh/sshd_config"
 
+f "kali repo line still live"             grep -rqE '^[[:space:]]*deb .*kali' /etc/apt/sources.list.d/
+t "kali repo commented by the kit"        grep -q "cpkit disabled (other distro's repo)" /etc/apt/sources.list.d/kali.list
+f "/etc/vsftpd.conf world-writable"       sh -c "[ \$(( 0\$(stat -c %a /etc/vsftpd.conf) & 2 )) -ne 0 ]"
+t "prancer password reset to NEW_PASSWORD" sh -c "echo 'Cyb3rP@triot!2026' | pamtester login prancer authenticate"
+t "old password not expired by max 90 (santa account check)" sh -c "echo 'Santa#2026pass' | pamtester login santa authenticate acct_mgmt"
+
 echo "== verify: authorized things untouched"
 t "santa still exists"                    id santa
 t "santa still in sudo"                   sh -c "id -nG santa | grep -qw sudo"
 t "prancer still exists"                  id prancer
-t "santa can still log in (good pw)"      sh -c "echo 'Santa#2026pass' | pamtester login santa authenticate"
+t "santa (running the kit) keeps its password" sh -c "echo 'Santa#2026pass' | pamtester login santa authenticate"
 f "wrong password rejected"               sh -c "echo 'nope' | pamtester login santa authenticate"
 t "nmap kept (ALLOWED_SOFTWARE)"          sh -c "dpkg -s nmap | grep -q 'ok installed'"
 t "vsftpd kept (CRITICAL)"                sh -c "dpkg -s vsftpd | grep -q 'ok installed'"

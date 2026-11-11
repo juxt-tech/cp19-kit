@@ -18,6 +18,21 @@ upd_fix_source() {
         *) sed -i -E "s#^[[:space:]]*\#[[:space:]]*(deb[[:space:]]+(\[[^]]*\][[:space:]]+)?https?://$CP_OFFICIAL_MIRRORS)#\1#" "$1" ;;
     esac
 }
+# Repos of OTHER distros planted on a Debian/Ubuntu/Mint image. Kali (seen on ETH007 Arena, Debian 11):
+# apt-get update fails on it (unsigned), so no updates install; with its key added, "upgrade" would
+# pull Kali packages = the OS upgrade READMEs forbid. These are switched off; other unknown repos
+# (Chrome, a README app) are only reported.
+CP_FOREIGN_REPO_RE='(kali\.org|kali\.download|parrotsec\.org|parrot\.sh|deb\.parrot|blackarch)'
+
+# Live deb/deb-src lines in a *.list file that point at a foreign distro.
+upd_foreign_lines() {
+    case "$1" in *.sources) return 0 ;; esac
+    grep -E "^[[:space:]]*deb(-src)?[[:space:]].*$CP_FOREIGN_REPO_RE" "$1" 2>/dev/null
+}
+upd_disable_foreign() {
+    sed -i -E "s#^([[:space:]]*deb(-src)?[[:space:]].*$CP_FOREIGN_REPO_RE.*)\$#\# cpkit disabled (other distro's repo): \1#" "$1"
+}
+
 _upd_auto() {
     cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
@@ -42,6 +57,14 @@ mod_sources() {
             cp_act sources "re-enable official sources in $f" "disabled sources = no installs, no security updates" upd_fix_source "$f"
             fixed=1
         fi
+        if [ -n "$(upd_foreign_lines "$f")" ]; then
+            cp_backup "$f"
+            cp_act sources "comment out other-distro repo lines in $f: $(upd_foreign_lines "$f" | awk '{print $2}' | sort -u | xargs)" \
+                "Kali/Parrot repos break apt update and would turn upgrade into an OS change" upd_disable_foreign "$f"
+            fixed=1
+        fi
+        case "$f" in *.sources) grep -qiE "^[[:space:]]*URIs:.*$CP_FOREIGN_REPO_RE" "$f" && \
+            cp_finding sources "$f uses another distro's repo (Kali/Parrot) - set 'Enabled: no' in that stanza by hand" ;; esac
     done
     if [ "$fixed" = 1 ]; then
         cp_act sources "apt-get update" "load package lists from the re-enabled sources" _upd_refresh

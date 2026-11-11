@@ -31,7 +31,11 @@ mod_perms() {
     find / -xdev -type f -perm -4000 2>/dev/null | grep -Ev "$CP_SUID_OK" | while read -r f; do
         cp_finding perms "unusual SUID binary: $f  (GTFOBins? e.g. find/vim/python with SUID = root shell)"
     done
-    find /etc /usr /bin /sbin -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
+    # Config under /etc is never meant to be world-writable (ETH007 image: dovecot.conf 777): fix it.
+    while read -r f; do
+        cp_act perms "chmod o-w $f (now $(stat -c '%a' "$f"))" "anyone could rewrite this config" chmod o-w "$f"
+    done < <(find /etc -xdev -type f -perm -0002 2>/dev/null)
+    find /usr /bin /sbin -xdev -type f -perm -0002 2>/dev/null | while read -r f; do
         cp_finding perms "world-writable system file: $f"
     done
     awk -F: '$3>=1000 && $3<65534 {print $6}' /etc/passwd | while read -r h; do

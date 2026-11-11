@@ -4,6 +4,39 @@
 
 CP_SUSPICIOUS_RE='nc |ncat|netcat|/dev/tcp|bash -i|sh -i|python.*socket|perl.*socket|socat|curl .*\|.*sh|wget .*\|.*sh|base64 -d|mkfifo|chmod \+s|useradd|\.\/[a-z]+ &'
 
+# Pure-ish (reads the link). 0 = report this unit file from /etc/systemd/system.
+# Symlinks made by "systemctl enable" point into /lib|/usr/lib/systemd (package units) and masks point
+# at /dev/null: both are noise. Report regular files and links that point anywhere else (1984 image:
+# a unit linked to /opt/... with an ncat reverse shell in ExecStart).
+persist_unit_suspect() {
+    local f="$1" t re="${CP_UNIT_LIB_RE:-^/(usr/)?lib/systemd/}"
+    if [ -L "$f" ]; then
+        t="$(readlink -f "$f" 2>/dev/null)"
+        [ "$t" = /dev/null ] && return 1
+        [[ "$t" =~ $re ]] && return 1
+    fi
+    return 0
+}
+
+_persist_units() {
+    local f owned n=0
+    owned="$(mktemp)"; cat /var/lib/dpkg/info/*.list 2>/dev/null | sort -u > "$owned"
+    while read -r f; do
+        persist_unit_suspect "$f" || continue
+        grep -qxF "$f" "$owned" && continue          # shipped by a package
+        local x; x="$(grep -m1 -E '^ExecStart' "$(readlink -f "$f")" 2>/dev/null)"
+        if echo "$x" | grep -Eq "$CP_SUSPICIOUS_RE"; then cp_finding persistence "SUSPICIOUS unit: $f  ($x)"
+        else cp_finding persistence "unit not from a package: $f  ($x)"; fi
+        n=$((n+1))
+    done < <(find /etc/systemd/system \( -name '*.service' -o -name '*.timer' -o -name '*.socket' \) 2>/dev/null | sort)
+    # Package unit files changed after install (a planted ExecStart in a real service).
+    find /lib/systemd/system /usr/lib/systemd/system -name '*.service' -newer /etc/hostname 2>/dev/null | while read -r f; do
+        grep -qxF "$f" "$owned" || cp_finding persistence "unit in system dir not from a package: $f  ($(grep -m1 '^ExecStart' "$f" 2>/dev/null))"
+    done
+    rm -f "$owned"
+    [ "$n" = 0 ] && echo "  ok   no hand-made units in /etc/systemd/system"
+}
+
 mod_persistence() {
     cp_header "PERSISTENCE / BACKDOORS  (report only)"
     local u f l
@@ -23,9 +56,7 @@ mod_persistence() {
     command -v systemctl >/dev/null && systemctl list-timers --all --no-legend 2>/dev/null | awk '{print $(NF-1)}' | \
         grep -Ev '^(apt-daily|apt-daily-upgrade|dpkg-db-backup|e2scrub_all|fstrim|logrotate|man-db|motd-news|systemd-tmpfiles-clean|anacron|fwupd-refresh|ua-timer|update-notifier-.*|phpsessionclean|snapd.*|sysstat-.*)\.timer$' | \
         while read -r t; do cp_finding persistence "non-default systemd timer: $t"; done
-    find /etc/systemd/system /lib/systemd/system -name '*.service' -newer /etc/hostname 2>/dev/null | head -30 | while read -r f; do
-        cp_finding persistence "service file newer than install: $f  ($(grep -m1 '^ExecStart' "$f" 2>/dev/null))"
-    done
+    _persist_units
     [ -s /etc/rc.local ] && grep -Ev '^\s*(#|$|exit 0)' /etc/rc.local | while read -r l; do cp_finding persistence "rc.local: $l"; done
     for f in /root/.bashrc /root/.profile /etc/profile /etc/bash.bashrc /etc/profile.d/*.sh /home/*/.bashrc /home/*/.profile /home/*/.bash_aliases; do
         [ -f "$f" ] && grep -EHn "$CP_SUSPICIOUS_RE|^alias (sudo|ls|cd|su)=" "$f" 2>/dev/null | while read -r l; do

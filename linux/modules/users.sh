@@ -2,10 +2,10 @@
 # Users module: make accounts and sudo membership match the README.
 # CP category: User Auditing. Never deletes home directories (files may be forensics evidence).
 
-# Pure planner. Args: "HUMANS" "SUDO_MEMBERS" "UID0_ACCOUNTS" "EMPTY_PASSWORD_ACCOUNTS"
-# Prints one action per line. Reads only its args + CP_ADMINS/CP_USERS/SUDO_USER.
+# Pure planner. Args: "HUMANS" "SUDO_MEMBERS" "UID0_ACCOUNTS" "EMPTY_PASSWORD_ACCOUNTS" ["CHANGED_TODAY"]
+# Prints one action per line. Reads only its args + CP_ADMINS/CP_USERS/CP_RESETPW/CP_ME/SUDO_USER.
 plan_users() {
-    local humans="$1" sudoers="$2" uid0="$3" emptypw="$4" u me="${CP_ME:-${SUDO_USER:-}}"
+    local humans="$1" sudoers="$2" uid0="$3" emptypw="$4" today="${5:-}" u me="${CP_ME:-${SUDO_USER:-}}"
     if [ -z "$CP_ADMINS" ]; then
         echo "users: ADMINS is empty in the config - refusing to plan (fill it from the README)" >&2
         return 1
@@ -32,6 +32,17 @@ plan_users() {
     for u in $emptypw; do
         [ "$u" = "root" ] || echo "SET_PASS $u"
     done
+    # RESET_PASSWORDS=yes: README passwords are often weak ("sad"). Never the signed-in (auto-login)
+    # user - READMEs say changing it can lock you out. Skip passwords already changed today so a
+    # second run changes nothing.
+    if [ "$CP_RESETPW" = yes ]; then
+        for u in $CP_ADMINS $CP_USERS; do
+            [ "$u" = "$me" ] || [ "$u" = "${SUDO_USER:-}" ] && continue
+            cp_in_list "$u" "$humans" || continue
+            cp_in_list "$u" "$emptypw $today" && continue
+            echo "RESET_PASS $u"
+        done
+    fi
     echo "LOCK_ROOT"
 }
 
@@ -40,6 +51,7 @@ _users_state() {
     SUDOERS="$(getent group sudo | cut -d: -f4 | tr ',' ' ' | xargs)"
     UID0="$(awk -F: '$3==0 {print $1}' /etc/passwd | xargs)"
     EMPTYPW="$(awk -F: '$2=="" {print $1}' /etc/shadow | xargs)"
+    CHANGED_TODAY="$(awk -F: -v d="$(( $(date +%s) / 86400 ))" '$3==d {print $1}' /etc/shadow | xargs)"
 }
 
 _set_pass() { printf '%s:%s\n' "$1" "$CP_NEWPASS" | chpasswd; }   # printf: password passed untouched
@@ -66,7 +78,7 @@ mod_users() {
     echo "  users in config  : $CP_USERS"
     echo "  humans on box    : $HUMANS"
     echo "  sudo group       : $SUDOERS"
-    plan="$(plan_users "$HUMANS" "$SUDOERS" "$UID0" "$EMPTYPW")" || return 0
+    plan="$(plan_users "$HUMANS" "$SUDOERS" "$UID0" "$EMPTYPW" "$CHANGED_TODAY")" || return 0
     while read -r act u; do
         case "$act" in
             REMOVE_USER) cp_act users "delete user $u (home kept)" "not in README" userdel "$u" ;;
@@ -82,6 +94,9 @@ mod_users() {
             SET_PASS)
                 if [ -z "$CP_NEWPASS" ]; then cp_finding users "$u has an EMPTY password - set one by hand"; continue; fi
                 cp_act users "set password for $u" "account has an empty password" _set_pass "$u" ;;
+            RESET_PASS)
+                if [ -z "$CP_NEWPASS" ]; then cp_finding users "RESET_PASSWORDS=yes but NEW_PASSWORD empty - $u keeps its password"; continue; fi
+                cp_act users "reset password for $u to NEW_PASSWORD" "RESET_PASSWORDS=yes (README passwords may be weak)" _set_pass "$u" ;;
             LOCK_ROOT)
                 if passwd -S root 2>/dev/null | awk '{exit !($2=="L")}'; then echo "  ok   root already locked"
                 else cp_act users "lock root password" "admins use sudo; direct root login is a target" passwd -l root; fi ;;

@@ -18,7 +18,7 @@ echo "non-root refused ok"
 
 step "audit run changes nothing in /etc"
 before="$(tar -cf - --sort=name /etc 2>/dev/null | sha256sum)"
-CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --yes --all > /tmp/audit.txt 2>&1 || fail "audit exit $(tail -5 /tmp/audit.txt)"
+SUDO_USER=santa CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --yes --all > /tmp/audit.txt 2>&1 || fail "audit exit $(tail -5 /tmp/audit.txt)"
 after="$(tar -cf - --sort=name /etc 2>/dev/null | sha256sum)"
 [ "$before" = "$after" ] || fail "audit modified /etc"
 grep -c "\[WOULD\]" /tmp/audit.txt | sed 's/^/would-actions: /'
@@ -26,13 +26,13 @@ grep -q "\[WOULD\] delete user hacker" /tmp/audit.txt || fail "audit did not pla
 echo "audit ok"
 
 step "apply run"
-CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --apply --yes --all > /tmp/apply.txt 2>&1 || fail "apply exit"
+SUDO_USER=santa CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --apply --yes --all > /tmp/apply.txt 2>&1 || fail "apply exit"
 RUN1="$(ls -1d /root/cpkit-runs/* | tail -1)"
 grep -E "FAILED|reverted|restored" /tmp/apply.txt && echo "(above failures logged)"
 bash $K/tests/verify.sh "$RUN1" || fail "verify"
 
 step "second apply is a no-op"
-CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --apply --yes --all > /tmp/apply2.txt 2>&1 || fail "apply2 exit"
+SUDO_USER=santa CP_SKIP_UPGRADE=1 bash $K/harden.sh --config /tmp/cp-config.txt --apply --yes --all > /tmp/apply2.txt 2>&1 || fail "apply2 exit"
 RUN2="$(ls -1d /root/cpkit-runs/* | tail -1)"
 [ "$RUN1" != "$RUN2" ] || fail "second run reused run dir"
 n="$(grep -c ' | ACTION | ' "$RUN2/log.txt" 2>/dev/null || true)"; n="${n:-0}"

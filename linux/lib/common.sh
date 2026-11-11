@@ -8,10 +8,11 @@
 CP_MODE="${CP_MODE:-audit}"     # audit | apply
 CP_YES="${CP_YES:-0}"           # 1 = don't prompt (tests only)
 CP_RUN="${CP_RUN:-}"            # run directory: log.txt, findings.txt, backup/
-CP_ADMINS=""; CP_USERS=""; CP_CRITICAL=""; CP_ALLOWED=""; CP_NEWPASS=""
+CP_ADMINS=""; CP_USERS=""; CP_CRITICAL=""; CP_ALLOWED=""; CP_NEWPASS=""; CP_RESETPW=""
 CP_CRITICAL_ALL=""              # CP_CRITICAL + every alias/unit name it implies
 CP_ME="${CP_ME:-}"              # the human running the kit (never removed/demoted)
-CP_SCORING_RE='cyberpatriot|cpscor|scoring|aeacus'
+# Scoring client names: CyberPatriot's own + Aeacus (practice images: unit CSSClient, binary phocus).
+CP_SCORING_RE='cyberpatriot|cpscor|scoring|aeacus|cssclient|phocus'
 
 # README words -> the unit names they can mean on Mint/Debian/Ubuntu.
 declare -A CP_SERVICE_ALIASES=(
@@ -77,7 +78,8 @@ cp_load_config() {
             CRITICAL_SERVICES) CP_CRITICAL="$val" ;;
             ALLOWED_SOFTWARE) CP_ALLOWED="$val" ;;
             NEW_PASSWORD) CP_NEWPASS="$val" ;;
-            KEEP_RDP|KEEP_SHARES|RESET_PASSWORDS) ;;              # Windows-only keys
+            RESET_PASSWORDS) CP_RESETPW="$(echo "$val" | tr '[:upper:]' '[:lower:]')" ;;
+            KEEP_RDP|KEEP_SHARES) ;;                              # Windows-only keys
             *) echo "  (config: unknown key '$key' ignored)" >&2 ;;
         esac
     done < "$file"
@@ -107,7 +109,7 @@ cp_is_protected_user() {
 cp_is_protected_service() {
     local s c
     s="$(echo "${1%.service}" | tr '[:upper:]' '[:lower:]')"
-    echo "$s" | grep -Eqi "$CP_SCORING_RE" && return 0
+    echo "$s" | grep -Eqi "$CP_SCORING_RE" && return 0   # never touch the scoring client
     s="${s%.socket}"; s="${s%.path}"
     [ -n "$CP_CRITICAL_ALL" ] || cp_expand_critical
     cp_in_list "$s" "$CP_CRITICAL_ALL" && return 0

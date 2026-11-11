@@ -111,11 +111,27 @@ mod_passwords() {
         cp_finding passwords "suspicious line in common-auth: $l"
     done
     # existing accounts keep old max-age until chage is run
-    local u
+    local u today last max
+    today=$(( $(date +%s) / 86400 ))
     for u in $(awk -F: '$3>=1000 && $3<65534 {print $1}' /etc/passwd); do
-        local max; max="$(chage -l "$u" 2>/dev/null | awk -F': ' '/Maximum number/ {print $2}')"
-        if [ "$max" != "90" ]; then
+        max="$(chage -l "$u" 2>/dev/null | awk -F': ' '/Maximum number/ {print $2}')"
+        last="$(getent shadow "$u" | cut -d: -f3)"
+        if pw_would_expire "$last" "$today" 90; then
+            # Practice/round images are built months earlier: max 90 on an old password expires it NOW.
+            # Expired = PAM account check fails = no sudo, and services that log in through PAM
+            # (Dovecot/webmail, FTP, Samba) reject the user. Restart the age clock instead.
+            cp_act passwords "chage -d today -M 90 -m 10 -W 7 $u (password $((today - last)) days old, now max=$max)" \
+                "max 90 alone would expire it at once and break logins" chage -d "$(date +%Y-%m-%d)" -M 90 -m 10 -W 7 "$u"
+        elif [ "$max" != "90" ]; then
             cp_act passwords "chage -M 90 -m 10 -W 7 $u (now max=$max)" "login.defs only affects NEW users" chage -M 90 -m 10 -W 7 "$u"
         fi
     done
+}
+
+# Pure. 0 when a password last changed on day LAST (days since 1970) is expired on day TODAY under MAX.
+# LAST empty or 0 ("must change at next login") is left alone.
+pw_would_expire() {
+    local last="$1" today="$2" max="$3"
+    case "$last" in ''|0|*[!0-9]*) return 1 ;; esac
+    [ $((last + max)) -le "$today" ]
 }

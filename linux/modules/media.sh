@@ -4,10 +4,12 @@
 
 # Drops the kit's own files (run dirs with backups, the downloaded kit) from the report.
 # The kit root is skipped only when it is named like the kit, so /home is never hidden.
+# Also drops web-app dependency code (vendor/, node_modules/): Roundcube alone gives ~10 "password" hits.
 media_not_kit() {
     local root="${CP_KIT_ROOT:-}"
-    case "$(basename "${root:-/x}")" in cp19-kit*|cyberpatriot-kit*) ;; *) root="" ;; esac
-    awk -v r="$root" 'index($0, "/root/cpkit-runs/") == 1 { next } r != "" && index($0, r "/") == 1 { next } { print }'
+    case "$(basename "${root:-/x}")" in cp19-kit*|cyberpatriot-kit*|cpkit) ;; *) root="" ;; esac
+    awk -v r="$root" 'index($0, "/root/cpkit-runs/") == 1 { next } r != "" && index($0, r "/") == 1 { next }
+                      /\/(vendor|node_modules)\// { next } { print }'
 }
 
 mod_media() {

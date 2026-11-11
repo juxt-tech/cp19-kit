@@ -34,11 +34,19 @@ done
 # weak password history (remember=0 used to count as ok)
 sed -i -E "/^[^#]*pam_unix.so/s/$/ remember=0/" /etc/pam.d/common-password
 
+# From the ETH007 Arena image (Debian 11): a live Kali repo, a world-writable service config,
+# and passwords last changed long before the round (max 90 would expire them at once).
+echo 'deb http://http.kali.org/kali kali-rolling main non-free contrib' > /etc/apt/sources.list.d/kali.list
+chmod 777 /etc/vsftpd.conf
+chage -d 2024-01-03 santa
+chage -d 2024-01-03 prancer   # RESET_PASSWORDS skips passwords changed today; images are built months ahead
+
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
 USERS=prancer dasher cupid blitzen
 CRITICAL_SERVICES=vsftpd ssh
 ALLOWED_SOFTWARE=nmap
 NEW_PASSWORD=Cyb3rP@triot!2026
+RESET_PASSWORDS=yes
 EOF
 echo "planted"
