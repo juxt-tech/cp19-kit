@@ -64,11 +64,12 @@ $order = [ordered]@{
     SecurityOptions = @{ Fn = { Invoke-CpModSecurityOptions -Config $cfg };            What = 'UAC, no anonymous SAM/shares, NTLMv2, SMB signing, CTRL+ALT+DEL' }
     Firewall        = @{ Fn = { Invoke-CpModFirewall -Config $cfg };                   What = 'all profiles on, block inbound, allow outbound' }
     Defender        = @{ Fn = { Invoke-CpModDefender -Config $cfg };                   What = 'real-time on, PUA on, remove exclusions, update + quick scan' }
-    Services        = @{ Fn = { Invoke-CpModServices -Config $cfg };                   What = 'disable risky services (not README-critical); Windows Update auto' }
+    Services        = @{ Fn = { Invoke-CpModServices -Config $cfg -IsDC:$isDC };        What = 'disable risky services (not README-critical); Windows Update auto' }
     Remote          = @{ Fn = { Invoke-CpModRemote -Config $cfg };                     What = 'RDP off (or on + NLA if KEEP_RDP=yes); Remote Assistance off' }
     Shares          = @{ Fn = { Invoke-CpModShares -Config $cfg };                     What = 'remove non-default shares; SMBv1 off; SMB signing' }
     Features        = @{ Fn = { Invoke-CpModFeatures -Config $cfg };                   What = 'Telnet/TFTP/SMB1/PowerShell v2 features off' }
     Updates         = @{ Fn = { Invoke-CpModUpdates -Config $cfg };                    What = 'automatic updates on; list apps to update by hand' }
+    Browsers        = @{ Fn = { Invoke-CpModBrowsers -Config $cfg };                   What = 'Edge/Chrome/Firefox: SmartScreen, pop-ups, dangerous downloads; REPORT Firefox prefs' }
     Software        = @{ Fn = { Invoke-CpModSoftware -Config $cfg };                   What = 'REPORT unwanted programs (uninstall by hand)' }
     Persistence     = @{ Fn = { Invoke-CpModPersistence -Config $cfg };                What = 'REPORT run keys, tasks, startup, IFEO, hosts, listeners, nc.exe' }
     Media           = @{ Fn = { Invoke-CpModMedia -Config $cfg };                      What = 'REPORT media + prohibited files (delete by hand later)' }

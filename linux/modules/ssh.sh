@@ -17,7 +17,14 @@ CP_SSH_WANT=(
     "IgnoreRhosts yes"
     "PermitUserEnvironment no"
     "UsePAM yes"
+    "StrictModes yes"
+    "LogLevel VERBOSE"
+    "AllowTcpForwarding no"
+    "AllowAgentForwarding no"
+    "PermitTunnel no"
 )
+# Pure. Ports sshd listens on besides 22 (BotForge image: a second "Port 2222" line = backdoor listener).
+ssh_extra_ports() { awk 'tolower($1) == "port" && $2 != "22" { print $2 }' "$1" 2>/dev/null | sort -u; }
 
 # Pure: prints "SET key value" for every wanted key whose value in FILE differs.
 plan_ssh() {
@@ -75,6 +82,13 @@ mod_ssh() {
         cp_act ssh "chown root:root + chmod 600 $f" "only root may read/edit sshd config" sh -c "chown root:root $f && chmod 600 $f"
     fi
     [ "$CP_MODE" = apply ] && [ "$changed" = 1 ] && _ssh_validate_or_restore
+    local p
+    for d in "$f" /etc/ssh/sshd_config.d/*.conf; do
+        [ -f "$d" ] || continue
+        for p in $(ssh_extra_ports "$d"); do
+            cp_finding ssh "sshd also listens on port $p ($d) - a second 'Port' line is a classic backdoor listener. Unless the README names that port: delete the line, then 'sudo systemctl restart ssh'"
+        done
+    done
     awk -F: '$3>=1000 {print $6}' /etc/passwd | while read -r h; do
         [ -s "$h/.ssh/authorized_keys" ] && cp_finding ssh "authorized_keys present: $h/.ssh/authorized_keys (check for planted keys)"
     done

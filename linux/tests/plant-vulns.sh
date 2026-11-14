@@ -54,6 +54,19 @@ mkdir -p /var/mail; chmod 777 /var/mail
 secdir="$(dirname "$(find / -xdev -name pam_permit.so -path '*security*' 2>/dev/null | head -1)")"
 cp "$secdir/pam_permit.so" "$secdir/pam_deny.so"
 
+# Round 4 (BotForge image + CP round staples): SUID on find, /tmp without the sticky bit, a library
+# forced into every program, a service account with a shell, a second sshd port, a hidden cron file,
+# an extra sudoers rule, anonymous FTP on the critical FTP server.
+chmod u+s "$(command -v find)"
+chmod 0777 /tmp
+cp "$(find / -xdev -name 'libm.so.6' 2>/dev/null | head -1)" /usr/local/lib/libhc.so
+echo /usr/local/lib/libhc.so > /etc/ld.so.preload
+useradd -r -s /bin/bash mysql
+sed -i '1i Port 22\nPort 2222' /etc/ssh/sshd_config
+echo '* * * * * root /bin/true' > /etc/cron.d/.maintenance
+echo 'botrunner ALL=(ALL) ALL' > /etc/sudoers.d/botrunner; chmod 440 /etc/sudoers.d/botrunner
+sed -i 's/^anonymous_enable=.*/anonymous_enable=YES/' /etc/vsftpd.conf
+grep -q '^anonymous_enable=YES' /etc/vsftpd.conf || echo 'anonymous_enable=YES' >> /etc/vsftpd.conf
 cat > /tmp/cp-config.txt <<'EOF'
 ADMINS=santa
 USERS=prancer dasher cupid blitzen

@@ -17,11 +17,17 @@ $script:CpNeverTouch = @('Dnscache','RpcSs','LSM','LanmanWorkstation','Netlogon'
 
 # Pure. Services = objects with Name, StartType, Status.
 function Get-CpServicePlan {
-    param([Parameter(Mandatory)]$Services, [Parameter(Mandatory)]$Config)
+    param([Parameter(Mandatory)]$Services, [Parameter(Mandatory)]$Config, [switch]$IsDC)
     $bad = @($script:CpBadServices)
+    # Domain controllers: no Print Spooler (PrintNightmare; CIS; scored on Dead by Daylight) unless the README needs it.
+    if ($IsDC) { $bad += 'Spooler' }
     $plan = New-Object System.Collections.Generic.List[object]
     foreach ($s in $Services) {
         $n = [string]$s.Name
+        # A DC without Windows Time drifts and Kerberos starts refusing logons (scored on Dead by Daylight).
+        if ($IsDC -and $n -eq 'W32Time' -and ([string]$s.StartType -eq 'Disabled' -or [string]$s.Status -ne 'Running')) {
+            $plan.Add([pscustomobject]@{ Action='EnableAuto'; Name=$n }); continue
+        }
         if ($script:CpNeverTouch -contains $n) { continue }
         if (Test-CpProtectedService -Name $n -Config $Config) {
             if ($bad -contains $n -or $script:CpRdpServices -contains $n) { $plan.Add([pscustomobject]@{ Action='KeepCritical'; Name=$n }) }
@@ -46,10 +52,10 @@ function Get-CpServicePlan {
 }
 
 function Invoke-CpModServices {
-    param($Config)
+    param($Config, [switch]$IsDC)
     Write-CpHeader 'SERVICES'
     $svcs = @(Get-Service | Select-Object Name, DisplayName, @{n='StartType';e={[string]$_.StartType}}, @{n='Status';e={[string]$_.Status}})
-    $plan = Get-CpServicePlan -Services $svcs -Config $Config
+    $plan = Get-CpServicePlan -Services $svcs -Config $Config -IsDC:$IsDC
     if ($plan.Count -eq 0) { Write-CpOk 'no risky services enabled; core services automatic' }
     foreach ($a in $plan) {
         $n = $a.Name; $dn = ($svcs | Where-Object Name -eq $n).DisplayName

@@ -25,6 +25,10 @@ declare -A CP_SERVICE_ALIASES=(
     [bind]="bind9 named" [bind9]="bind9 named" [named]="bind9 named" [dns]="bind9 named"
     [mail]="postfix dovecot" [smtp]="postfix exim4" [cups]="cups cups-browsed" [printing]="cups cups-browsed"
     [nfs]="nfs-server nfs-kernel-server rpcbind" [web]="apache2 nginx" [vnc]="x11vnc vncserver xrdp"
+    [http]="apache2 nginx" [https]="apache2 nginx" [openssh]="ssh sshd" [sftp]="ssh sshd"
+    [imap]="dovecot" [pop3]="dovecot" [redis]="redis-server redis" [docker]="docker containerd"
+    [mongodb]="mongod mongodb" [ldap]="slapd" [dhcp]="isc-dhcp-server" [tftp]="tftpd-hpa atftpd"
+    [telnet]="telnetd inetutils-inetd openbsd-inetd xinetd" [snmp]="snmpd" [rsync]="rsync"
 )
 
 # Who is running this? sudo -> SUDO_USER; "sudo su -" -> logname / who am i.
@@ -195,6 +199,55 @@ cp_conf_get() {
             n++
         }
         END { if (conflict) print "(conflicting duplicates)"; else if (val != "") print val }' "$file"
+}
+
+# Value of KEY in [SECTION] of an INI file (smb.conf, my.cnf). Section and key match without case,
+# spaces inside the key are normalised, "#" and ";" lines are comments. The last live value wins.
+ini_get() {
+    local file="$1" sec="$2" key="$3"
+    [ -f "$file" ] || return 0
+    awk -v s="$sec" -v k="$key" '
+        function norm(x) { gsub(/^[ \t]+|[ \t]+$/, "", x); gsub(/[ \t]+/, " ", x); return tolower(x) }
+        BEGIN { s = tolower(s); k = norm(k) }
+        /^[ \t]*[#;]/ { next }
+        /^[ \t]*\[.*\][ \t]*$/ { cur = $0; gsub(/^[ \t]*\[|\][ \t]*$/, "", cur); cur = tolower(cur); next }
+        cur == s && index($0, "=") && norm(substr($0, 1, index($0, "=") - 1)) == k {
+            v = substr($0, index($0, "=") + 1); gsub(/^[ \t]+|[ \t]+$/, "", v); val = v; found = 1 }
+        END { if (found) print val }' "$file"
+}
+# Set KEY = VALUE inside [SECTION]. Replaces the live line(s) there (keeping their indent); else adds
+# the key right under the section header - appending to the end of the file would land in the LAST
+# section, which in smb.conf is a share. Section missing -> added at the end.
+# Returns 0 if changed, 2 if already set. Backs the file up first.
+ini_set() {
+    local file="$1" sec="$2" key="$3" value="$4" tmp
+    [ "$(ini_get "$file" "$sec" "$key")" = "$value" ] && return 2
+    [ -n "$CP_RUN" ] && cp_backup "$file"
+    tmp="$(mktemp)"
+    awk -v s="$sec" -v k="$key" -v v="$value" '
+        function norm(x) { gsub(/^[ \t]+|[ \t]+$/, "", x); gsub(/[ \t]+/, " ", x); return tolower(x) }
+        function indent(x) { match(x, /^[ \t]*/); return substr(x, 1, RLENGTH) }
+        BEGIN { ls = tolower(s); nk = norm(k) }
+        { lines[NR] = $0 }
+        END {
+            cur = ""; hdr = 0; hit = 0; ind = ""; gotind = 0
+            for (i = 1; i <= NR; i++) {
+                l = lines[i]
+                if (l ~ /^[ \t]*\[.*\][ \t]*$/) { c = l; gsub(/^[ \t]*\[|\][ \t]*$/, "", c); cur = tolower(c); if (cur == ls && !hdr) hdr = i; continue }
+                if (cur != ls || l ~ /^[ \t]*([#;]|$)/ || !index(l, "=")) continue
+                if (!gotind) { ind = indent(l); gotind = 1 }
+                if (norm(substr(l, 1, index(l, "=") - 1)) == nk) { live[i] = 1; hit = 1 }
+            }
+            done = 0
+            for (i = 1; i <= NR; i++) {
+                if (i in live) { if (!done) { print indent(lines[i]) k " = " v; done = 1 } continue }
+                print lines[i]
+                if (i == hdr && !hit) { print ind k " = " v; done = 1 }
+            }
+            if (!done) { print "[" s "]"; print k " = " v }
+        }' "$file" > "$tmp"
+    cat "$tmp" > "$file"; rm -f "$tmp"
+    return 0
 }
 
 # Set KEY to VALUE. Replaces every uncommented occurrence; else the first commented one; else

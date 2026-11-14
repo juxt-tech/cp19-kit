@@ -103,9 +103,21 @@ mod_users() {
         esac
     done <<< "$plan"
     # Other admin-ish groups and sudoers rules: report only (a human decides).
-    for g in admin wheel adm lpadmin sambashare; do
+    for g in admin wheel adm lpadmin sambashare docker lxd shadow disk; do
         local mem; mem="$(getent group "$g" | cut -d: -f4)"
-        [ -n "$mem" ] && cp_finding users "group $g members: $mem  (check against README)"
+        case "$g" in
+            docker|lxd|shadow|disk) [ -n "$mem" ] && cp_finding users "group $g members: $mem  (this group = root: remove anyone the README does not make an admin: sudo gpasswd -d USER $g)" ;;
+            *) [ -n "$mem" ] && cp_finding users "group $g members: $mem  (check against README)" ;;
+        esac
+    done
+    local sf2 rule
+    for sf2 in /etc/sudoers /etc/sudoers.d/*; do
+        [ -f "$sf2" ] || continue
+        while IFS= read -r rule; do
+            [ -n "$rule" ] || continue
+            cp_in_list "$(echo "$rule" | awk '{print $1}')" "$CP_ADMINS" && continue
+            cp_finding users "sudoers rule in $sf2: $rule  (not a stock rule - does the README make this user/group an admin? else delete it with visudo)"
+        done < <(sudo_extra_rules "$sf2")
     done
     grep -rhsE '^[^#].*NOPASSWD' /etc/sudoers /etc/sudoers.d/ | while read -r l; do
         cp_finding users "sudoers NOPASSWD rule: $l"
@@ -138,7 +150,17 @@ _sudo_fix_noauth() {   # comment out, then visudo -c; a broken sudoers is restor
 }
 
 # Accounts base-passwd creates on every Debian/Ubuntu/Mint with a no-login shell (sync keeps /bin/sync).
-CP_SYS_NOLOGIN="daemon bin sys games man lp mail news uucp proxy www-data backup list irc gnats nobody _apt"
+CP_SYS_NOLOGIN="daemon bin sys games man lp mail news uucp proxy www-data backup list irc gnats nobody _apt \
+mysql sshd postfix dovecot dovenull redis ftp bind messagebus syslog systemd-network systemd-resolve systemd-timesync \
+avahi colord pulse lightdm tss uuidd tcpdump usbmux rtkit saned Debian-exim nginx"
+# (second and third line: service accounts whose packages create them with nologin/false. BotForge image:
+#  mysql with /bin/bash. postgres is NOT here - its package really ships /bin/bash.)
+# Pure. sudoers rules that are neither the stock ones (root, %sudo, %admin) nor settings.
+# NOPASSWD lines have their own finding.
+sudo_extra_rules() {
+    grep -Ev '^[[:space:]]*(#|$|Defaults|@include|[A-Za-z_]+_Alias)' "$1" 2>/dev/null | grep -v NOPASSWD | \
+        grep -Ev '^[[:space:]]*(root|%sudo|%admin)[[:space:]]+ALL[[:space:]]*=[[:space:]]*\(ALL(:ALL)?\)[[:space:]]+ALL[[:space:]]*$'
+}
 # Pure. Arg: passwd file. Names from that list that were given a real shell (ETH007: sys -> /bin/sh).
 sys_shell_fix_list() {
     awk -F: -v l=" $CP_SYS_NOLOGIN " 'index(l, " " $1 " ") && $7 !~ /(nologin|false)$/ {print $1}' "$1"

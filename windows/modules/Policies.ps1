@@ -25,6 +25,7 @@ $script:CpSecurityOptions = [ordered]@{
     "$L\NoLMHash"                         = '4,1'
     "$L\SCENoApplyLegacyAuditPolicy"      = '4,1'  # let the detailed audit policy win
     "$L\DisableDomainCreds"               = '4,1'
+    "$L\ForceGuest"                       = '4,0'  # Sharing and security model for local accounts = Classic
     'MACHINE\System\CurrentControlSet\Services\LanmanWorkstation\Parameters\EnablePlainTextPassword' = '4,0'
     'MACHINE\System\CurrentControlSet\Services\LanmanWorkstation\Parameters\RequireSecuritySignature' = '4,1'
     'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\RequireSecuritySignature'     = '4,1'
@@ -45,6 +46,32 @@ $script:CpSecurityOptions = [ordered]@{
     "$PS\InactivityTimeoutSecs"           = '4,900'  # Interactive logon: machine inactivity limit
     "$PS\ShutdownWithoutLogon"            = '4,0'    # no Shut down button on the logon screen
     "$L\MSV1_0\allownullsessionfallback"  = '4,0'    # no LocalSystem NULL session fallback
+    # Round 4 (Baldi's Basics / Dead by Daylight answer keys + the CIS options image makers reuse)
+    'MACHINE\System\CurrentControlSet\Control\Session Manager\ProtectionMode'                     = '4,1'  # strengthen default permissions of internal system objects
+    'MACHINE\System\CurrentControlSet\Control\Session Manager\Kernel\ObCaseInsensitive'           = '4,1'
+    "$PS\EnableVirtualization"            = '4,1'  # UAC: virtualize file and registry write failures
+    "$PS\EnableSecureUIAPaths"            = '4,1'  # UAC: only elevate UIAccess apps installed in secure locations
+    'MACHINE\System\CurrentControlSet\Services\LanmanWorkstation\Parameters\EnableSecuritySignature' = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\EnableSecuritySignature'      = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\EnableForcedLogOff'           = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\AutoDisconnect'               = '4,15' # idle SMB session limit (minutes)
+    'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionShares'            = '7,'   # no share reachable anonymously (DBD: NETLOGON)
+    'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\SealSecureChannel'             = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\SignSecureChannel'             = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RequireStrongKey'              = '4,1'
+    'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\DisablePasswordChange'         = '4,0'
+    "$L\MSV1_0\NTLMMinClientSec"          = '4,537395200'  # NTLMv2 session security + 128-bit
+    "$L\MSV1_0\NTLMMinServerSec"          = '4,537395200'
+    'MACHINE\System\CurrentControlSet\Services\LDAP\LDAPClientIntegrity'                          = '4,1'  # LDAP client: negotiate signing
+}
+# Domain controllers only. Kept apart so it gets its own question: an application that binds to LDAP
+# without signing or TLS (a plain "simple bind") stops working once the DC requires signing.
+# Scored on both DC answer keys read (Baldi's Basics, Dead by Daylight).
+function Get-CpDcSecurityOptions {
+    [ordered]@{
+        'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LDAPServerIntegrity' = '4,2'   # LDAP server signing: Require signing
+        'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RefusePasswordChange' = '4,0'
+    }
 }
 
 # Scored settings secedit can't set (not in its Security Options list). Seen in practice-image answer keys.
@@ -57,7 +84,49 @@ $script:CpExtraSecurityRegistry = @(
     New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' NoAutorun 1 'no autorun.inf commands'
     New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' NoAutoplayfornonVolume 1 'AutoPlay off for phones/cameras'
     New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest' UseLogonCredential 0 'no plaintext passwords in LSASS (mimikatz)'
+    # Round 4: classic privilege-escalation switches + the Baldi's Basics / Dead by Daylight items
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' AlwaysInstallElevated 0 'MSI packages must not install with SYSTEM rights'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' LocalAccountTokenFilterPolicy 0 'UAC also filters remote logons of local admins'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' EnableMulticast 0 'LLMNR off (name-poisoning attacks, Responder)'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\CredSSP\Parameters' AllowEncryptionOracle 0 'CredSSP encryption oracle: Force Updated Clients'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' EnableScriptBlockLogging 1 'PowerShell script block logging on'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service' AllowBasic 0 'WinRM service: no Basic authentication'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service' AllowUnencryptedTraffic 0 'WinRM service: no unencrypted traffic'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Client' AllowBasic 0 'WinRM client: no Basic authentication'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Client' AllowUnencryptedTraffic 0 'WinRM client: no unencrypted traffic'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' DisableWpbtExecution 1 'Windows Platform Binary Table off (programs planted in firmware)'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\SystemCertificates\Root\ProtectedRoots' Flags 1 'users cannot add their own trusted root certificates'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Policies' NtfsEncryptPagingFile 1 'NTFS pagefile encryption (after the next reboot)'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' NtfsEncryptPagingFile 1 'NTFS pagefile encryption (after the next reboot)'
+    # Round 5: ideas from Ripper1004/CyberPatriot-Toolkit (CIS / MSS items seen on CP answer keys)
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' RunAsPPL 1 'LSA protection: blocks mimikatz-style password dumping (full effect after reboot)'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' EnableUserControl 0 'users cannot change Windows Installer options'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint' RestrictDriverInstallationToAdministrators 1 'PrintNightmare: only admins install printer drivers'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint' NoWarningNoElevationOnInstall 0 'PrintNightmare: Point and Print warns + asks for elevation (install)'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint' UpdatePromptSettings 0 'PrintNightmare: Point and Print warns + asks for elevation (update)'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' SafeDllSearchMode 1 'safe DLL search order (no DLL planting from the current folder)'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel' DisableExceptionChainValidation 0 'SEHOP exploit protection on'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' DisableIPSourceRouting 2 'MSS: IPv4 source routing off'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters' DisableIPSourceRouting 2 'MSS: IPv6 source routing off'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' EnableICMPRedirect 0 'MSS: ICMP redirects cannot change routes'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters' NoNameReleaseOnDemand 1 'MSS: ignore NetBIOS name-release requests'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\WinHttp' DisableWpad 1 'WPAD proxy auto-discovery off (Responder-style attacks)'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging' EnableModuleLogging 1 'PowerShell module logging on'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging\ModuleNames' '*' '*' 'PowerShell module logging for every module' 'String'
+    New-CpReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' ProcessCreationIncludeCmdLine_Enabled 1 'process-creation events include the command line'
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance' fAllowFullControl 0 'Remote Assistance cannot take full control'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' fAllowUnsolicited 0 'no unsolicited Remote Assistance offers'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' fDisableCdm 1 'Remote Desktop cannot map the client drives'
+    New-CpReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service' DisableRunAs 1 'WinRM service: no stored RunAs credentials'
 )
+# Domain controllers only (Zerologon, CVE-2020-1472). Enforcement mode is the default since Feb 2021;
+# images turn it off or add a VulnerableChannelAllowList.
+$script:CpDcExtraRegistry = @(
+    New-CpReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters' FullSecureChannelProtection 1 'Zerologon: Netlogon secure RPC enforced for every machine'
+)
+
+# Pure. True when the LocalMachine execution policy lets any script run.
+function Test-CpLooseExecutionPolicy([string]$Policy) { $Policy -in @('Unrestricted', 'Bypass') }
 
 # Pure. BcdText = 'bcdedit /enum {current}' output. Returns the nx policy, or $null if not shown.
 function Get-CpDepPolicy([string]$BcdText) {
@@ -164,11 +233,26 @@ function Invoke-CpModSecurityOptions {
     param($Config)
     Write-CpHeader 'SECURITY OPTIONS  (UAC, anonymous access, NTLM, SMB signing)'
     Invoke-CpSeceditSection -Module securityoptions -Section 'Registry Values' -Wanted $script:CpSecurityOptions -Why 'Local Policies > Security Options'
+    $isDC = (Get-CimInstance Win32_OperatingSystem).ProductType -eq 2
+    if ($isDC) {
+        Invoke-CpSeceditSection -Module securityoptions -Section 'Registry Values' -Wanted (Get-CpDcSecurityOptions) `
+            -Why 'domain controller: LDAP server signing = Require signing. Say NO if the README names an app that logs in to LDAP with a plain simple bind'
+        Invoke-CpRegistrySettings -Module securityoptions -Wanted $script:CpDcExtraRegistry
+        $allow = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters' -ErrorAction SilentlyContinue).VulnerableChannelAllowList
+        if ($allow) { Add-CpFinding securityoptions "Zerologon: VulnerableChannelAllowList is set ($allow) - machines in it skip secure RPC. Delete the value under HKLM\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters (and the GPO 'Domain controller: Allow vulnerable Netlogon secure channel connections')" }
+        Add-CpFinding securityoptions 'DC: a domain GPO beats local policy. If a Security Option does not score, set it in gpmc.msc > Default Domain Controllers Policy too, then gpupdate /force (also: Account Policies > Kerberos Policy > Enforce user logon restrictions = Enabled)'
+    }
     Invoke-CpRegistrySettings -Module securityoptions -Wanted $script:CpExtraSecurityRegistry
     Invoke-CpDep
+    $ep = "$(Get-ExecutionPolicy -Scope LocalMachine)"
+    if (Test-CpLooseExecutionPolicy $ep) {
+        Invoke-CpAction securityoptions "PowerShell execution policy (LocalMachine) $ep -> RemoteSigned" 'any downloaded script could run' {
+            Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction Stop }
+    } else { Write-CpOk "PowerShell execution policy (LocalMachine) = $ep" }
+    $gpEp = "$(Get-ExecutionPolicy -Scope MachinePolicy)"
+    if (Test-CpLooseExecutionPolicy $gpEp) { Add-CpFinding securityoptions "Group Policy forces PowerShell execution policy $gpEp (MachinePolicy) - set 'Turn on Script Execution' to Allow only signed / local scripts, or delete HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ExecutionPolicy" }
     $inf = Export-CpSecPolicy
     if ($inf) {
-        $isDC = (Get-CimInstance Win32_OperatingSystem).ProductType -eq 2
         $all  = if ($isDC) { @(Get-ADUser -Filter * -ErrorAction SilentlyContinue | ForEach-Object SamAccountName) } else { @(Get-LocalUser | ForEach-Object Name) }
         $f = @(Get-CpUserRightsFindings -InfText $inf -ServiceAccounts (Get-CpServiceAccounts -AllUsers $all -IsDC:$isDC))
         foreach ($x in $f) { Add-CpFinding userrights $x }

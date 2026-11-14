@@ -1,0 +1,20 @@
+# PowerShell module folder names that are attack tools (one per line, prefix match, case ignored).
+# Read by Get-CpBadPsModules in modules\Reports.ps1. Kept OUT of the .ps1 on purpose: Defender's script
+# scanner (AMSI) blocks a script that spells this list out, and then the whole Windows kit fails to load.
+DSInternals
+PowerSploit
+PowerView
+PowerUp
+PowerCat
+Nishang
+Mimikatz
+Invoke-Mimikatz
+Empire
+BloodHound
+SharpHound
+Rubeus
+Kerberoast
+Inveigh
+ADRecon
+PowerUpSQL
+Invoke-Obfuscation

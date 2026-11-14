@@ -14,7 +14,7 @@ t "root locked"                           sh -c "passwd -S root | awk '{exit !(\
 t "/etc/shadow is 640"                    sh -c "[ \$(stat -c %a /etc/shadow) = 640 ]"
 t "PermitRootLogin no"                    grep -qx "PermitRootLogin no" /etc/ssh/sshd_config
 t "sshd config still valid"               sshd -t
-t "syncookies persisted"                  grep -qx "net.ipv4.tcp_syncookies=1" /etc/sysctl.d/99-cpkit.conf
+t "syncookies persisted"                  grep -qx "net.ipv4.tcp_syncookies=1" /etc/sysctl.d/zz-cpkit.conf
 t "PASS_MAX_DAYS 90"                      grep -qE "^PASS_MAX_DAYS[[:space:]]+90$" /etc/login.defs
 t "pam_faillock enabled"                  grep -q pam_faillock.so /etc/pam.d/common-auth
 t "password history remember=5"           grep -qE "^[^#]*pam_unix.so.*remember=5" /etc/pam.d/common-password
@@ -50,6 +50,16 @@ t "sudoers still valid"                   visudo -c
 t "sys has no login shell"                sh -c "getent passwd sys | grep -qE '(nologin|false)$'"
 f "/var/mail world-writable"              sh -c "[ \$(( 0\$(stat -c %a /var/mail) & 2 )) -ne 0 ]"
 
+f "find still has the SUID bit"            sh -c '[ -u "$(command -v find)" ]'
+t "/tmp has the sticky bit again"         sh -c '[ -k /tmp ]'
+f "/etc/ld.so.preload still in place"     test -e /etc/ld.so.preload
+t "ld.so.preload kept in quarantine"      test -f "$RUN/quarantine/ld.so.preload"
+t "mysql service account has no login shell" sh -c "getent passwd mysql | grep -qE '(nologin|false)$'"
+t "second sshd port listed"               grep -q "sshd also listens on port 2222" "$RUN/findings.txt"
+t "hidden cron file listed"               grep -q "HIDDEN file in a cron directory: /etc/cron.d/.maintenance" "$RUN/findings.txt"
+t "extra sudoers rule listed"             grep -q "sudoers rule in /etc/sudoers.d/botrunner" "$RUN/findings.txt"
+t "anonymous FTP off (critical vsftpd)"   grep -qx "anonymous_enable=NO" /etc/vsftpd.conf
+t "ptrace restriction persisted"          grep -qx "kernel.yama.ptrace_scope=1" /etc/sysctl.d/zz-cpkit.conf
 echo "== verify: authorized things untouched"
 t "santa still exists"                    id santa
 t "santa still in sudo"                   sh -c "id -nG santa | grep -qw sudo"

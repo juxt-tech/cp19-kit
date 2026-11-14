@@ -42,8 +42,8 @@ sudo bash linux/harden.sh --apply                                               
 Run folder: `/root/cpkit-runs/<time>/`
 
 ## Modules
-**Linux:** users · sources · integrity · passwords · firewall · ssh · apps · sysctl · perms · services · software · updates · persistence (report; offers to quarantine reverse-shell cron jobs) · media (report)
-**Windows:** Users · AccountPolicy · AuditPolicy · SecurityOptions · Firewall · Defender · Services · Remote · Shares · Features · Updates · Software (report) · Persistence (report) · Media (report) · Server (Server only: AD, DNS, IIS)
+**Linux:** users · sources · integrity · passwords · firewall · ssh · apps · sysctl · perms · services · logging (auditd, AppArmor, core dumps) · desktop (autologin, screen lock, Firefox) · software · updates · persistence (report; offers to quarantine reverse-shell cron jobs) · media (report)
+**Windows:** Users · AccountPolicy · AuditPolicy · SecurityOptions · Firewall · Defender · Services · Remote · Shares · Features · Updates · Browsers (Edge/Chrome/Firefox policies) · Software (report) · Persistence (report) · Media (report) · Server (Server only: AD, DNS, IIS)
 
 ## Undo
 - Best: revert to your last VMware snapshot.
