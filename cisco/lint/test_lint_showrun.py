@@ -106,5 +106,129 @@ class CompressTests(unittest.TestCase):
                          "Fa0/2-3, Fa0/10, Gi1/0/4, Gi1/0/6")
 
 
+def check(text, switchport=None, name="dev"):
+    return L.run_checks(L.parse_config(text, name), switchport)
+
+
+def by_level(findings, level):
+    return [f.message for f in findings if f.level == level]
+
+
+def dtp(findings):
+    return [f for f in findings if f.message.startswith("DTP")]
+
+
+SECRET = "enable secret 5 $1$x\n"
+
+
+class DtpTests(unittest.TestCase):
+    def test_dtp_fallback_flags_missing_nonegotiate(self):
+        f = dtp(check(SECRET + "interface FastEthernet0/1\n!\ninterface FastEthernet0/2\n switchport nonegotiate\n"))
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].level, "FAIL")
+        self.assertIn("Fa0/1", f[0].message)
+        self.assertNotIn("Fa0/2", f[0].message)
+
+    def test_dtp_skips_routed_svi_and_subinterfaces(self):
+        cfg = SECRET + ("ip routing\ninterface GigabitEthernet1/0/1\n no switchport\n ip address 1.1.1.1 255.255.255.0\n"
+                        "interface GigabitEthernet1/0/2\n switchport nonegotiate\ninterface Vlan100\n ip address 2.2.2.2 255.0.0.0\n")
+        self.assertEqual(dtp(check(cfg)), [])
+
+    def test_dtp_router_counts_only_switchport_interfaces(self):
+        cfg = SECRET + ("interface GigabitEthernet0/0/0\n ip address 1.1.1.1 255.0.0.0\n"
+                        "interface GigabitEthernet0/1/0\n switchport mode access\n")
+        found = check(cfg)
+        self.assertEqual(len(dtp(found)), 1)
+        self.assertIn("Gi0/1/0", dtp(found)[0].message)
+        self.assertNotIn("Gi0/0/0", dtp(found)[0].message)
+        self.assertTrue(any("not checked" in m for m in by_level(found, "WARN")))
+
+    def test_switchport_file_overrides_show_run(self):
+        cfg = SECRET + "interface FastEthernet0/1\n!\n"
+        self.assertEqual(dtp(check(cfg, {"Fa0/1": False})), [])
+        f = dtp(check(cfg, {"Fa0/1": True, "Gi0/1": True}))
+        self.assertEqual(len(f), 1)
+        self.assertIn("Fa0/1, Gi0/1", f[0].message)
+
+    def test_router_with_switchport_file_has_no_not_checked_warn(self):
+        found = check(SECRET + "interface GigabitEthernet0/0/0\n ip address 1.1.1.1 255.0.0.0\n", {"Gi0/1/0": False})
+        self.assertFalse(any("not checked" in m for m in by_level(found, "WARN")))
+
+
+class RuleTests(unittest.TestCase):
+    def test_portfast_without_bpduguard_warns(self):
+        w = by_level(check(SECRET + "interface FastEthernet0/3\n switchport nonegotiate\n spanning-tree portfast\n"), "WARN")
+        self.assertTrue(any("PortFast without BPDU Guard: Fa0/3" in m for m in w))
+
+    def test_bpduguard_without_portfast_warns(self):
+        w = by_level(check(SECRET + "interface FastEthernet0/3\n switchport nonegotiate\n spanning-tree bpduguard enable\n"), "WARN")
+        self.assertTrue(any("BPDU Guard without PortFast: Fa0/3" in m for m in w))
+
+    def test_trunk_without_allowed_list_warns(self):
+        w = by_level(check(SECRET + "interface FastEthernet0/1\n switchport mode trunk\n switchport nonegotiate\n"), "WARN")
+        self.assertTrue(any("allowed vlan" in m and "Fa0/1" in m for m in w))
+
+    def test_enable_secret_missing_fails(self):
+        self.assertTrue(any("enable secret" in m for m in by_level(check("hostname R1\n"), "FAIL")))
+
+    def test_enable_password_warns(self):
+        self.assertTrue(any("enable password" in m for m in by_level(check(SECRET + "enable password cisco\n"), "WARN")))
+
+    def test_acl_applied_but_undefined_fails_and_unused_warns(self):
+        cfg = SECRET + ("ip access-list extended Block_Communicaton\n deny ip any any\n"
+                        "interface GigabitEthernet0/0/0\n ip address 1.1.1.1 255.0.0.0\n"
+                        " ip access-group Block_Communication in\n")
+        found = check(cfg)
+        self.assertTrue(any("'Block_Communication'" in m for m in by_level(found, "FAIL")))
+        self.assertTrue(any("'Block_Communicaton'" in m for m in by_level(found, "WARN")))
+
+    def test_numbered_acl_on_vty_is_fine(self):
+        cfg = SECRET + "access-list 10 permit any\nline vty 0 4\n access-class 10 in\n"
+        self.assertEqual([m for m in by_level(check(cfg), "FAIL") + by_level(check(cfg), "WARN") if "ACL" in m], [])
+
+    def test_l3_switch_without_ip_routing_fails(self):
+        cfg = SECRET + "interface GigabitEthernet1/0/1\n no switchport\n ip address 1.1.1.1 255.0.0.0\n"
+        self.assertTrue(any("ip routing" in m for m in by_level(check(cfg), "FAIL")))
+        self.assertFalse(any("ip routing" in m for m in by_level(check("ip routing\n" + cfg), "FAIL")))
+
+    def test_2960_management_svi_does_not_need_ip_routing(self):
+        cfg = SECRET + "interface FastEthernet0/1\n switchport nonegotiate\ninterface Vlan1\n ip address 1.1.1.2 255.0.0.0\n"
+        self.assertFalse(any("ip routing" in m for m in by_level(check(cfg), "FAIL")))
+
+    def test_subinterface_without_encapsulation_fails(self):
+        cfg = SECRET + "interface GigabitEthernet0/1.1\n ip address 1.1.1.1 255.0.0.0\n"
+        self.assertTrue(any("Gi0/1.1" in m and "encapsulation" in m for m in by_level(check(cfg), "FAIL")))
+        ok = SECRET + "interface GigabitEthernet0/1.1\n encapsulation dot1Q 100\n ip address 1.1.1.1 255.0.0.0\n"
+        self.assertFalse(any("encapsulation" in m for m in by_level(check(ok), "FAIL")))
+
+    def test_dhcp_pool_missing_fields_warns(self):
+        w = by_level(check(SECRET + "ip dhcp pool VLAN100\n network 10.100.0.0 255.255.255.0\n"), "WARN")
+        self.assertTrue(any("VLAN100" in m and "default-router" in m for m in w))
+        self.assertTrue(any("VLAN100" in m and "dns-server" in m for m in w))
+
+    def test_shutdown_interface_with_ip_warns(self):
+        w = by_level(check(SECRET + "interface GigabitEthernet0/0\n ip address 1.1.1.1 255.0.0.0\n shutdown\n"), "WARN")
+        self.assertTrue(any("Gi0/0" in m and "shutdown" in m for m in w))
+
+    def test_ospf_wildcard_not_zero_warns(self):
+        w = by_level(check(SECRET + "router ospf 1\n network 10.0.0.0 0.0.0.255 area 0\n network 10.1.0.1 0.0.0.0 area 0\n"), "WARN")
+        self.assertEqual(len([m for m in w if "OSPF" in m]), 1)
+        self.assertTrue(any("10.0.0.0 0.0.0.255" in m for m in w))
+
+
+class FixtureTests(unittest.TestCase):
+    def test_r2_access1_flags_unused_ports(self):
+        text = (FIXTURES / "r2" / "Campus_Access1.txt").read_text()
+        found = check(text, name="Campus_Access1")
+        f = dtp(found)
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f[0].level, "FAIL")
+        self.assertIn("Fa0/5-24, Gi0/1-2", f[0].message)
+
+    def test_clean_fixture_no_fail(self):
+        found = check((FIXTURES / "clean" / "SW1.txt").read_text())
+        self.assertEqual(by_level(found, "FAIL"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

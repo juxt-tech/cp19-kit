@@ -116,3 +116,141 @@ def compress_ports(names):
     if run:
         parts.append(run)
     return ", ".join(f"{p}{a}" if a == b else f"{p}{a}-{b}" for p, a, b in parts)
+
+
+@dataclass
+class Finding:
+    level: str  # "FAIL" or "WARN"
+    message: str
+
+
+def _has(lines, prefix):
+    return any(l.lower().startswith(prefix.lower()) for l in lines)
+
+
+def _has_ip(lines):
+    return any(l.startswith("ip address ") for l in lines)
+
+
+def _is_l2(dev, name, lines):
+    if dev.is_switch:
+        if name.startswith(("Vlan", "Loopback")) or "." in name:
+            return False
+        return "no switchport" not in lines
+    return _has(lines, "switchport ")
+
+
+def check_dtp(dev, switchport):
+    if switchport is not None:
+        on = [p for p, is_on in switchport.items() if is_on]
+        if on:
+            return [Finding("FAIL", "DTP still on ('Negotiation of Trunking: On'): " + compress_ports(on))]
+        return []
+    out = []
+    missing = [n for n, l in dev.interfaces.items() if _is_l2(dev, n, l) and "switchport nonegotiate" not in l]
+    if missing:
+        out.append(Finding("FAIL", "DTP still on (no 'switchport nonegotiate'): " + compress_ports(missing)))
+    if not dev.is_switch:
+        out.append(Finding("WARN", "router switch-module ports not checked; paste 'show interfaces switchport' "
+                                   f"as {dev.name}.switchport.txt"))
+    return out
+
+
+def check_portfast(dev, _sp):
+    pf_only, bg_only = [], []
+    for n, l in dev.interfaces.items():
+        pf = _has(l, "spanning-tree portfast")
+        bg = "spanning-tree bpduguard enable" in l
+        if pf and not bg:
+            pf_only.append(n)
+        if bg and not pf:
+            bg_only.append(n)
+    out = []
+    if pf_only:
+        out.append(Finding("WARN", "PortFast without BPDU Guard: " + compress_ports(pf_only)))
+    if bg_only:
+        out.append(Finding("WARN", "BPDU Guard without PortFast: " + compress_ports(bg_only)))
+    return out
+
+
+def check_trunks(dev, _sp):
+    bad = [n for n, l in dev.interfaces.items()
+           if "switchport mode trunk" in l and not _has(l, "switchport trunk allowed vlan")]
+    return [Finding("WARN", "trunk with no 'switchport trunk allowed vlan' list: " + compress_ports(bad))] if bad else []
+
+
+def check_enable(dev, _sp):
+    out = []
+    if not _has(dev.globals, "enable secret"):
+        out.append(Finding("FAIL", "no 'enable secret' set"))
+    if _has(dev.globals, "enable password"):
+        out.append(Finding("WARN", "'enable password' present (only use enable secret unless the spec asks)"))
+    return out
+
+
+def check_acls(dev, _sp):
+    defined = {h.split()[-1] for h in dev.sections if h.startswith("ip access-list ")}
+    defined |= {g.split()[1] for g in dev.globals if g.startswith("access-list ")}
+    used = set()
+    for lines in list(dev.interfaces.values()) + list(dev.sections.values()):
+        for l in lines:
+            m = re.match(r"^(?:ip access-group|access-class)\s+(\S+)", l)
+            if m:
+                used.add(m.group(1))
+    out = [Finding("FAIL", f"ACL '{a}' applied but not defined (check spelling)") for a in sorted(used - defined)]
+    out += [Finding("WARN", f"ACL '{a}' defined but never applied") for a in sorted(defined - used)]
+    return out
+
+
+def check_ip_routing(dev, _sp):
+    if not dev.is_switch or "ip routing" in dev.globals:
+        return []
+    svis = [n for n, l in dev.interfaces.items() if n.startswith("Vlan") and _has_ip(l)]
+    routed = [n for n, l in dev.interfaces.items() if "no switchport" in l]
+    if len(svis) >= 2 or routed:
+        return [Finding("FAIL", "layer 3 switch config (SVIs / routed ports) without 'ip routing'")]
+    return []
+
+
+def check_subinterfaces(dev, _sp):
+    return [Finding("FAIL", f"{n}: subinterface without 'encapsulation dot1Q <vlan>'")
+            for n, l in dev.interfaces.items() if "." in n and not _has(l, "encapsulation dot1q")]
+
+
+def check_dhcp(dev, _sp):
+    out = []
+    for h, lines in dev.sections.items():
+        if h.startswith("ip dhcp pool "):
+            pool = h.split()[-1]
+            for need in ("default-router", "dns-server"):
+                if not _has(lines, need):
+                    out.append(Finding("WARN", f"DHCP pool {pool}: missing {need}"))
+    return out
+
+
+def check_shutdown(dev, _sp):
+    return [Finding("WARN", f"{n}: has an IP address but is shutdown")
+            for n, l in dev.interfaces.items() if _has_ip(l) and "shutdown" in l]
+
+
+def check_ospf(dev, _sp):
+    out = []
+    for h, lines in dev.sections.items():
+        if h.startswith("router ospf"):
+            for l in lines:
+                p = l.split()
+                if len(p) >= 5 and p[0] == "network" and p[2] != "0.0.0.0":
+                    out.append(Finding("WARN", f"OSPF network uses wildcard {p[2]} (spec may want the interface IP "
+                                               f"with 0.0.0.0): {l}"))
+    return out
+
+
+CHECKS = (check_enable, check_dtp, check_portfast, check_trunks, check_acls, check_ip_routing,
+          check_subinterfaces, check_dhcp, check_shutdown, check_ospf)
+
+
+def run_checks(dev, switchport=None):
+    findings = []
+    for c in CHECKS:
+        findings.extend(c(dev, switchport))
+    return findings
