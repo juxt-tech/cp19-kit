@@ -209,7 +209,8 @@ Update this table after each practice lab.
 | Router switch-module ports (ISR NIM) forgotten | suspected (R2) | `show interfaces switchport` on the router; configure every listed port except the ones the spec says not to touch |
 | Pasted lines silently dropped or rejected | suspected (R2) | scroll back for `%`; checker; `show run` |
 | `exit` after a rejected line breaks the rest of the block | suspected (R2) | rule 7 |
-| Extra lines not in the spec (`.1` DHCP exclusions, PortFast on the remote site) | suspected (R2) | rule 2 |
+| Extra lines not in the spec (`.1` DHCP exclusions) | suspected (R2) | rule 2 |
+| "All X" vs. a spec line that says "don't touch Y" (R2 internet port) | known | the specific "don't touch" line wins; write the reason down (rule 9) |
 | Trunk port guessed (Gi0/1-2) instead of read (Fa0/1-2) | caught in R2 by CDP | rule 4 |
 | Config typed at `Router>` | caught in R2 | rule 5 |
 | `switchport trunk allowed vlan` typed as separate lines (each one replaces the last) | known | one comma list, or `allowed vlan add` |

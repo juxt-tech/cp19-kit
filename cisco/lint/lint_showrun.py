@@ -11,7 +11,7 @@ Stdlib only, ASCII output. Not for use during scored rounds.
 import re
 from dataclasses import dataclass, field
 
-MORE_RE = re.compile(r"[ ]*--More--[ ]*")
+MORE_RE = re.compile(r" ?--More-- ?")
 BACKSPACE_RE = re.compile(r"\x08(?:[\x08 ]*\x08)?")
 PROMPT_RE = re.compile(r"^[A-Za-z0-9_.()-]+[#>]")
 HEADER_RES = (re.compile(r"^Building configuration"), re.compile(r"^Current configuration\s*:"))
@@ -60,6 +60,16 @@ class Device:
     sections: dict = field(default_factory=dict)
 
 
+def _looks_like_switch(globals_, interfaces):
+    if any(g.startswith("spanning-tree ") for g in globals_):
+        return True  # PT switches always print spanning-tree globals; routers don't
+    for n, lines in interfaces.items():
+        physical = not n.startswith(("Vlan", "Loopback")) and "." not in n
+        if physical and "no switchport" not in lines and any(l.startswith("ip address ") for l in lines):
+            return False  # a routed physical port without 'no switchport' = router (e.g. 2811 Fa0/0)
+    return any(i.startswith(("Fa0/", "Gi1/0/")) for i in interfaces)
+
+
 def parse_config(text, fallback_name):
     globals_, interfaces, sections = [], {}, {}
     body = None
@@ -81,7 +91,7 @@ def parse_config(text, fallback_name):
     for g in globals_:
         if g.startswith("hostname "):
             name = g.split(None, 1)[1]
-    is_switch = any(i.startswith(("Fa0/", "Gi1/0/")) for i in interfaces)
+    is_switch = _looks_like_switch(globals_, interfaces)
     return Device(name, is_switch, globals_, interfaces, sections)
 
 
@@ -141,16 +151,18 @@ def _is_l2(dev, name, lines):
 
 
 def check_dtp(dev, switchport):
-    if switchport is not None:
-        on = [p for p, is_on in switchport.items() if is_on]
-        if on:
-            return [Finding("FAIL", "DTP still on ('Negotiation of Trunking: On'): " + compress_ports(on))]
-        return []
     out = []
-    missing = [n for n, l in dev.interfaces.items() if _is_l2(dev, n, l) and "switchport nonegotiate" not in l]
+    listed = switchport or {}
+    on = [p for p, is_on in listed.items() if is_on]
+    if on:
+        out.append(Finding("FAIL", "DTP still on ('Negotiation of Trunking: On'): " + compress_ports(on)))
+    # The switchport file shows a bare access port as "Off", but the grader checks the line itself,
+    # so every L2 port (show run, plus anything the switchport file lists) still needs nonegotiate.
+    missing = [n for n, l in dev.interfaces.items()
+               if (_is_l2(dev, n, l) or n in listed) and n not in on and "switchport nonegotiate" not in l]
     if missing:
         out.append(Finding("FAIL", "DTP still on (no 'switchport nonegotiate'): " + compress_ports(missing)))
-    if not dev.is_switch:
+    if switchport is None and not dev.is_switch:
         out.append(Finding("WARN", "router switch-module ports not checked; paste 'show interfaces switchport' "
                                    f"as {dev.name}.switchport.txt"))
     return out
@@ -265,7 +277,10 @@ def _say(text=""):
 
 
 def _read(path):
-    return path.read_text(encoding="utf-8", errors="replace")
+    data = path.read_bytes()
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):  # PowerShell 5.1 '>' writes UTF-16
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8-sig", errors="replace")
 
 
 def main(argv):

@@ -22,6 +22,10 @@ Status: suspected fixes. Confirm against Check Results -> Assessment Items and u
 - **"Exclude .2"**: only `.2` is required. The `.1` exclusions below stop DHCP handing out the gateway
   address, but are extra lines. If Assessment Items marks the DHCP exclusions red, remove the `.1` lines.
 - **"All layer 2 switch ports ... turn off DTP"** = every port, including unused ones. **NEW**
+- **Core Gi0/2/0 (internet, VLAN60) is left alone**, even though rule 1 says "all ports". The spec says
+  "Please do not touch the interface configuration that connects to the internet", and that overrides "all".
+- **PortFast + BPDU Guard on Remote_Switch fa0/2-3**: L2 items 9-10 say "All PC ports", and PC5/PC6 are
+  PC ports, so they're included. If Assessment Items marks them red, the grader meant campus PCs only.
 
 ## Rules used when typing these blocks
 - No `exit` right after a line that might be rejected (`vlan 199` on a router). If the line errors, the

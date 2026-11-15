@@ -20,6 +20,10 @@ class CleanTests(unittest.TestCase):
         self.assertEqual(L.clean("interface Fa0/1   \n\tswitchport nonegotiate\t\n"),
                          ["interface Fa0/1", " switchport nonegotiate"])
 
+    def test_clean_more_without_backspace_keeps_indent(self):
+        self.assertEqual(L.clean(" switchport mode access\n --More--  switchport nonegotiate\n"),
+                         [" switchport mode access", " switchport nonegotiate"])
+
     def test_clean_drops_prompts_and_headers(self):
         text = ("Switch1#show running-config\nBuilding configuration...\n\n"
                 "Current configuration : 1234 bytes\n!\nhostname SW1\nSW1#\n")
@@ -143,12 +147,42 @@ class DtpTests(unittest.TestCase):
         self.assertNotIn("Gi0/0/0", dtp(found)[0].message)
         self.assertTrue(any("not checked" in m for m in by_level(found, "WARN")))
 
-    def test_switchport_file_overrides_show_run(self):
-        cfg = SECRET + "interface FastEthernet0/1\n!\n"
-        self.assertEqual(dtp(check(cfg, {"Fa0/1": False})), [])
+    def test_switchport_file_off_still_needs_nonegotiate(self):
+        cfg = SECRET + "interface FastEthernet0/1\n switchport mode access\n!\n"
+        f = dtp(check(cfg, {"Fa0/1": False}))
+        self.assertEqual(len(f), 1)
+        self.assertIn("Fa0/1", f[0].message)
+
+    def test_switchport_file_on_fails(self):
+        cfg = SECRET + "interface FastEthernet0/1\n switchport nonegotiate\n!\n"
         f = dtp(check(cfg, {"Fa0/1": True, "Gi0/1": True}))
         self.assertEqual(len(f), 1)
         self.assertIn("Fa0/1, Gi0/1", f[0].message)
+        self.assertEqual(dtp(check(cfg, {"Fa0/1": False})), [])
+
+    def test_partial_switchport_file_falls_back_to_show_run(self):
+        cfg = SECRET + "interface FastEthernet0/1\n switchport nonegotiate\n!\ninterface FastEthernet0/2\n!\n"
+        f = dtp(check(cfg, {"Fa0/1": False}))
+        self.assertEqual(len(f), 1)
+        self.assertIn("Fa0/2", f[0].message)
+
+    def test_switchport_file_reveals_bare_router_module_ports(self):
+        cfg = SECRET + ("interface GigabitEthernet0/0/0\n ip address 1.1.1.1 255.0.0.0\n!\n"
+                        "interface GigabitEthernet0/1/1\n!\n")
+        f = dtp(check(cfg, {"Gi0/1/1": False}))
+        self.assertEqual(len(f), 1)
+        self.assertIn("Gi0/1/1", f[0].message)
+        self.assertNotIn("Gi0/0/0", f[0].message)
+
+    def test_2811_router_is_not_a_switch(self):
+        cfg = SECRET + ("interface FastEthernet0/0\n ip address 10.0.0.1 255.255.255.0\n!\n"
+                        "interface FastEthernet0/1\n no ip address\n shutdown\n!\ninterface Serial0/0/0\n!\n")
+        d = L.parse_config(cfg, "R")
+        self.assertFalse(d.is_switch)
+        self.assertEqual([f for f in dtp(L.run_checks(d, None)) if f.level == "FAIL"], [])
+
+    def test_spanning_tree_global_marks_switch(self):
+        self.assertTrue(L.parse_config("spanning-tree mode pvst\ninterface GigabitEthernet0/1\n!\n", "x").is_switch)
 
     def test_router_with_switchport_file_has_no_not_checked_warn(self):
         found = check(SECRET + "interface GigabitEthernet0/0/0\n ip address 1.1.1.1 255.0.0.0\n", {"Gi0/1/0": False})
@@ -254,7 +288,7 @@ class MainTests(unittest.TestCase):
 
     def test_main_uses_switchport_file(self):
         with tempfile.TemporaryDirectory() as d:
-            Path(d, "SW.txt").write_text(SECRET + "interface FastEthernet0/1\n!\n")
+            Path(d, "SW.txt").write_text(SECRET + "interface FastEthernet0/1\n switchport nonegotiate\n!\n")
             Path(d, "SW.switchport.txt").write_text("Name: Fa0/1\nNegotiation of Trunking: Off\n")
             code, out = run_main([d])
         self.assertEqual(code, 0, out)
@@ -266,6 +300,15 @@ class MainTests(unittest.TestCase):
             code, out = run_main([d])
         self.assertEqual(code, 0)
         self.assertIn("Ghost.switchport.txt: no matching show run file", out)
+
+    def test_main_reads_utf16_and_bom_files(self):
+        cfg = "hostname SW9\nenable secret 5 $1$x\ninterface FastEthernet0/1\n switchport nonegotiate\n"
+        for enc in ("utf-16", "utf-8-sig"):
+            with tempfile.TemporaryDirectory() as d:
+                Path(d, "file.txt").write_text(cfg, encoding=enc)
+                code, out = run_main([d])
+            self.assertEqual(code, 0, enc + out)
+            self.assertIn("== SW9 (switch) ==", out, enc)
 
     def test_main_output_is_ascii(self):
         out = run_main([str(FIXTURES / "r2")])[1]
