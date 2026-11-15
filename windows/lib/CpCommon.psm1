@@ -173,6 +173,21 @@ function Invoke-CpAction {
     }
 }
 
+# Run a READ again when it fails. District 13: the first AD query after boot failed once with
+# "A local error has occurred" and ended the whole Server module; the second try worked.
+# Only for reads: a change must never be repeated blindly.
+function Invoke-CpRetry {
+    param([Parameter(Mandatory)][scriptblock]$ScriptBlock, [int]$Tries = 3, [int]$DelaySec = 5)
+    for ($i = 1; $i -le $Tries; $i++) {
+        try { return (& $ScriptBlock) }
+        catch {
+            if ($i -ge $Tries) { throw }
+            Write-Host "  (read failed: $($_.Exception.Message.Split("`n")[0]) - try $($i + 1) of $Tries in $DelaySec s)" -ForegroundColor Yellow
+            if ($DelaySec -gt 0) { Start-Sleep -Seconds $DelaySec }
+        }
+    }
+}
+
 # Registry settings outside secedit's reach. Wanted = objects with Path (HKLM:\...), Name, Type, Value, Why.
 # Pure: Current = @{ 'Path\Name' = value-or-$null }. Returns the items whose value differs.
 function Get-CpRegistryPlan {

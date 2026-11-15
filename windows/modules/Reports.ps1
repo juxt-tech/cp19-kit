@@ -45,6 +45,10 @@ function Invoke-CpModSoftware {
     if ($ctx.RunDir) { $progs | Sort-Object DisplayName | Format-Table -AutoSize | Out-String -Width 250 | Set-Content (Join-Path $ctx.RunDir 'installed-programs.txt') -Encoding ASCII; Write-Host "  full list: $(Join-Path $ctx.RunDir 'installed-programs.txt')" }
     $odd = Get-ChildItem 'C:\' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(PerfLogs|Program Files|Program Files \(x86\)|ProgramData|Users|Windows|Windows\.old|inetpub|cpkit-runs|Recovery|\$.*|Config\.Msi|Documents and Settings|System Volume Information|OneDriveTemp|CyberPatriot.*)$' }
     foreach ($d in $odd) { Add-CpFinding software "non-standard folder on C:\: $($d.FullName)" }
+    foreach ($root in "$env:ProgramFiles\WindowsPowerShell\Modules", "$env:windir\System32\WindowsPowerShell\v1.0\Modules", "${env:ProgramFiles(x86)}\WindowsPowerShell\Modules") {
+        $names = @(Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | ForEach-Object Name)
+        foreach ($m in (Get-CpBadPsModules -Names $names)) { Add-CpFinding software "UNWANTED: PowerShell attack module '$m' in $root  (delete the folder after forensics)" }
+    }
 }
 
 # Pure: Luhn check, so random 16-digit numbers (order IDs, GUID pieces) aren't reported as cards.
@@ -140,6 +144,37 @@ function Get-CpTaskVerdict([string]$Name, [string]$Action) {
     return ''
 }
 
+# Pure. LSA package lists (HKLM\SYSTEM\CurrentControlSet\Control\Lsa). Anything Windows does not ship
+# there is loaded into LSASS at boot and sees every password (mimilib, password-filter backdoors).
+$script:CpLsaDefaults = @('scecli','rassfm','msv1_0','kerberos','schannel','wdigest','tspkg','pku2u','cloudap','livessp','negoexts','""','')
+function Get-CpLsaPackageFindings {
+    param([string[]]$Notification = @(), [string[]]$Security = @(), [string[]]$Authentication = @())
+    $out = @()
+    foreach ($set in @(@('Notification Packages', $Notification), @('Security Packages', $Security), @('Authentication Packages', $Authentication))) {
+        foreach ($p in @($set[1])) {
+            if ($script:CpLsaDefaults -contains ([string]$p).Trim().ToLower()) { continue }
+            $out += "LSA $($set[0]) lists '$p' - not a Windows default: this DLL loads into LSASS and sees every password (HKLM\SYSTEM\CurrentControlSet\Control\Lsa)"
+        }
+    }
+    return $out
+}
+# Pure (given -Bad). PowerShell module folder names that are attack tools (Baldi's Basics scored removing
+# DSInternals). The tool names live in lib\bad-ps-modules.txt: spelled out in this file, Defender's AMSI
+# flagged Reports.ps1 as malicious and blocked the whole kit (found 2026-11-13).
+$script:CpBadPsModuleFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'lib\bad-ps-modules.txt'
+function Get-CpBadPsModuleList {
+    @(Get-Content $script:CpBadPsModuleFile -ErrorAction SilentlyContinue | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch '^#' })
+}
+function Get-CpBadPsModules([string[]]$Names, [string[]]$Bad = (Get-CpBadPsModuleList)) {
+    return @($Names | Where-Object { $n = $_; @($Bad | Where-Object { $n -like "$_*" }).Count -gt 0 })
+}
+# Pure. Folders in the machine PATH outside Windows / Program Files: a program dropped there runs instead
+# of the real one when an admin types its name (Baldi's Basics: C:\temp, writable by Everyone).
+function Get-CpOddPathEntries([string]$Path) {
+    return @($Path -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') } | Where-Object {
+        $_ -and $_ -notmatch '(?i)^(%SystemRoot%|%windir%|%ProgramFiles(\(x86\))?%|%SYSTEMROOT%|C:\\Windows|C:\\Program Files( \(x86\))?|C:\\ProgramData\\(chocolatey|Microsoft))(\\|$)' })
+}
+
 function Invoke-CpModPersistence {
     param($Config)
     Write-CpHeader 'PERSISTENCE / BACKDOORS  (report only)'
@@ -202,4 +237,102 @@ function Invoke-CpModPersistence {
     # drivers loaded from outside Windows (mimikatz mimidrv, rootkits)
     Get-CimInstance Win32_SystemDriver -ErrorAction SilentlyContinue | Where-Object { $_.PathName -and $_.PathName -notmatch '(?i)\\Windows\\|\\Program Files|^\\SystemRoot\\|^System32\\' } |
         ForEach-Object { Add-CpFinding persistence "driver '$($_.Name)' ($($_.State)) loads from: $($_.PathName)" }
+    # ---- Round 4: places the Baldi's Basics and Dead by Daylight images used ----
+    $wer = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\Hangs' -ErrorAction SilentlyContinue).Debugger
+    if ($wer) { Add-CpFinding persistence "Windows Error Reporting hang debugger set: $wer  (runs when any program hangs - delete the value HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\Hangs\Debugger)" }
+    $lsa = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -ErrorAction SilentlyContinue
+    $osc = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\OSConfig' -ErrorAction SilentlyContinue
+    $lsaF = Get-CpLsaPackageFindings -Notification @($lsa.'Notification Packages') -Security (@($lsa.'Security Packages') + @($osc.'Security Packages')) -Authentication @($lsa.'Authentication Packages')
+    foreach ($x in $lsaF) { Add-CpFinding persistence $x }
+    foreach ($hive in @(Get-ChildItem 'Registry::HKEY_USERS' -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -notmatch '_Classes$' })) {
+        $sid = $hive.PSChildName
+        $envk = Get-ItemProperty "Registry::HKEY_USERS\$sid\Environment" -ErrorAction SilentlyContinue
+        if ($envk.UserInitMprLogonScript) { Add-CpFinding persistence "logon script for user $sid (HKU\$sid\Environment\UserInitMprLogonScript): $($envk.UserInitMprLogonScript)  - delete the value AND the file" }
+        if ($envk.SSLKEYLOGFILE) { Add-CpFinding persistence "SSLKEYLOGFILE set for user $sid -> $($envk.SSLKEYLOGFILE)  (browser TLS keys are written to disk: delete the variable and the file)" }
+        $pol = Get-ItemProperty "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\System" -ErrorAction SilentlyContinue
+        foreach ($v in 'DisableTaskMgr','DisableRegistryTools') {
+            if ($pol.$v) { Add-CpFinding persistence "$v = $($pol.$v) for user $sid (the image locked a tool) - fix: reg delete `"HKU\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\System`" /v $v /f" }
+        }
+    }
+    $menv = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -ErrorAction SilentlyContinue
+    if ($menv.SSLKEYLOGFILE) { Add-CpFinding persistence "SSLKEYLOGFILE set for the whole machine -> $($menv.SSLKEYLOGFILE)  (TLS keys are written to disk: delete the variable and the file)" }
+    foreach ($d in (Get-CpOddPathEntries -Path ([string]$menv.Path))) {
+        Add-CpFinding persistence "machine PATH contains $d  (outside Windows / Program Files: a program dropped there can run instead of the real one - remove it from PATH unless the README software needs it; check who can write to the folder)"
+    }
+    # Group Policy scripts: run as SYSTEM at boot / as the user at logon (Baldi: startup.vbs in SYSVOL re-created an admin)
+    $gpDirs = @("$env:windir\System32\GroupPolicy\Machine\Scripts", "$env:windir\System32\GroupPolicy\User\Scripts")
+    if (Test-Path "$env:windir\SYSVOL\domain\Policies") {
+        $gpDirs += @(Get-ChildItem "$env:windir\SYSVOL\domain\Policies" -Directory -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName)\MACHINE\Scripts"; "$($_.FullName)\USER\Scripts" })
+        $gpDirs += "$env:windir\SYSVOL\domain\scripts"
+    }
+    foreach ($d in $gpDirs) {
+        Get-ChildItem $d -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(scripts|psscripts)\.ini$' -or $_.Length -gt 10 } |
+            ForEach-Object { Add-CpFinding persistence "Group Policy / logon script: $($_.FullName)  (runs at startup or logon - read it; scripts with passwords are a scored finding)" }
+    }
+    # Trust providers (SIP): a DLL here decides whether a signature is valid; Dead by Daylight hid malware in one
+    $sipDlls = @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Cryptography\OID\EncodingType 0' -Recurse -ErrorAction SilentlyContinue |
+        ForEach-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).Dll } | Where-Object { $_ } | Sort-Object -Unique)
+    foreach ($dll in $sipDlls) {
+        $full = [Environment]::ExpandEnvironmentVariables($dll)
+        if ($full -notmatch '\\') { $full = Join-Path "$env:windir\System32" $full }
+        if (-not (Test-Path $full)) { continue }
+        $sig = Get-AuthenticodeSignature $full -ErrorAction SilentlyContinue
+        if (-not $sig -or $sig.Status -ne 'Valid' -or "$($sig.SignerCertificate.Subject)" -notmatch 'Microsoft') {
+            Add-CpFinding persistence "signature-check provider DLL is not signed by Microsoft: $full  (registered under HKLM\SOFTWARE\Microsoft\Cryptography\OID - unregister with regsvr32 /u, then delete)"
+        }
+    }
+    # ---- Round 5 (ideas from Ripper1004/CyberPatriot-Toolkit) ----
+    $svcs = @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Select-Object Name, PathName)
+    foreach ($x in (Get-CpUnquotedServicePaths -Services $svcs)) {
+        Add-CpFinding persistence "UNQUOTED service path with spaces (a program dropped at the first space runs as SYSTEM): $x  - fix: put quotes around the .exe path in HKLM\SYSTEM\CurrentControlSet\Services\<name>\ImagePath"
+    }
+    $nsh = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NetSh' -ErrorAction SilentlyContinue
+    if ($nsh) {
+        foreach ($p in ($nsh.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })) {
+            $dll = "$($p.Value)"
+            $odd = Test-CpOddNetshDll -Dll $dll
+            if (-not $odd) {
+                $full = Join-Path "$env:windir\System32" $dll
+                if (Test-Path $full) { $sig = Get-AuthenticodeSignature $full -ErrorAction SilentlyContinue; $odd = (-not $sig -or $sig.Status -ne 'Valid') }
+            }
+            if ($odd) { Add-CpFinding persistence "NetSh helper DLL '$($p.Name)' = $dll is not a signed Windows DLL (runs every time netsh starts) - delete the value under HKLM\SOFTWARE\Microsoft\NetSh" }
+        }
+    }
+    $boot = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).BootExecute
+    foreach ($x in (Get-CpBootExecuteFindings -Values @($boot))) {
+        Add-CpFinding persistence "BootExecute runs '$x' before Windows starts (default is only 'autocheck autochk *') - remove it from HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\BootExecute"
+    }
+    $profiles = @("$PSHOME\profile.ps1", "$PSHOME\Microsoft.PowerShell_profile.ps1", "$env:windir\SysWOW64\WindowsPowerShell\v1.0\profile.ps1") +
+        @(Get-ChildItem 'C:\Users\*\Documents\WindowsPowerShell\*profile.ps1', 'C:\Users\*\Documents\PowerShell\*profile.ps1' -Force -ErrorAction SilentlyContinue | ForEach-Object FullName)
+    foreach ($p in ($profiles | Select-Object -Unique)) {
+        if (Test-Path $p) { Add-CpFinding persistence "PowerShell profile (runs every time PowerShell starts): $p  - read it; a clean image has none" }
+    }
+}
+
+# Pure. Services = objects with Name + PathName. Returns "name: path" for unquoted paths whose .exe part
+# contains a space (C:\Program Files\x y\svc.exe -> Windows tries C:\Program.exe first).
+function Get-CpUnquotedServicePaths {
+    param($Services)
+    $out = @()
+    foreach ($s in @($Services)) {
+        $p = "$($s.PathName)".Trim()
+        if (-not $p -or $p.StartsWith('"')) { continue }
+        $exe = if ($p -match '^(.+?\.exe)') { $Matches[1] } else { $p }
+        if ($exe -match ' ' -and $exe -match '^[A-Za-z]:\\') { $out += "$($s.Name): $p" }
+    }
+    return $out
+}
+
+# Pure. True when a NetSh helper value points outside System32/SysWOW64 (a bare file name means System32).
+function Test-CpOddNetshDll([string]$Dll) {
+    if (-not $Dll) { return $false }
+    $d = [Environment]::ExpandEnvironmentVariables($Dll)
+    if ($d -notmatch '\\') { return $false }
+    return ($d -notmatch '(?i)^[A-Za-z]:\\Windows\\(System32|SysWOW64)\\[^\\]+\.dll$')
+}
+
+# Pure. BootExecute entries that are not the stock autochk line.
+function Get-CpBootExecuteFindings {
+    param($Values)
+    @(@($Values) | Where-Object { "$_".Trim() -and "$_".Trim() -notmatch '(?i)^autocheck\s+autochk(\s+/\S+)*\s+\*$' })
 }

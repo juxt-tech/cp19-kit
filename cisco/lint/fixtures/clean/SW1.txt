@@ -1,0 +1,23 @@
+hostname SW1
+!
+enable secret 5 $1$abc$def
+!
+spanning-tree mode rapid-pvst
+!
+interface FastEthernet0/1
+ switchport trunk allowed vlan 10,20
+ switchport mode trunk
+ switchport nonegotiate
+!
+interface FastEthernet0/2
+ switchport access vlan 10
+ switchport mode access
+ switchport nonegotiate
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+interface Vlan1
+ no ip address
+ shutdown
+!
+end

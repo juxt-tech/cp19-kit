@@ -57,13 +57,15 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 | 2 | passwords | `login.defs` max 90 / min 10 / warn 7 (+ `chage` existing users; a password older than 90 days also gets its age reset, or it would expire at once and break logins, Dovecot/webmail included); pwquality minlen 10 + every char class; `remember=5`; remove `nullok`; faillock 5 tries / 30 min (via pam-auth-update, self-checking). If it says **pam_faillock was NOT added**, common-auth was hand-edited: read it for planted lines (`pam_permit`, `pam_exec`), then `pam-auth-update --force` | Account Policies |
 | 3 | firewall | ufw on, deny in, allow out, open ports for critical services, logging | Defensive Countermeasures |
 | 4 | ssh | PermitRootLogin no, no empty passwords, MaxAuthTries 4, X11 off… validated with `sshd -t` (done even when ssh isn't critical: nothing here locks anyone out) | App Security Settings |
-| 4b | apps | only for README-critical services, each validated + rolled back: **Apache** ServerTokens Prod, ServerSignature Off, TraceEnable Off, no `Indexes`; **PHP** expose_php Off, cookie_httponly; **Postfix** VRFY off, HELO required, banner without version; **Dovecot** ssl=yes (if a cert exists), no debug passwords; **Roundcube** installer off, then webmail→Dovecot over `ssl://localhost:993`. **Log in to webmail once afterwards.** | App Security Settings |
+| 4b | apps | only for README-critical services, each validated + rolled back: **Apache** ServerTokens Prod, ServerSignature Off, TraceEnable Off, no `Indexes`; **PHP** expose_php Off, cookie_httponly; **Postfix** VRFY off, HELO required, banner without version; **Dovecot** ssl=yes (if a cert exists), no debug passwords; **Roundcube** installer off, then webmail→Dovecot over `ssl://localhost:993`; **BIND** `version "none"` + `allow-transfer { none; }` (checked with `named-checkconf`); **ProFTPD** RootLogin off, DefaultRoot ~, no version banner; **Pure-FTPd** NoAnonymous + ChrootEveryone; **reports** Postfix open relay (`mynetworks 0.0.0.0/0`), BIND open to `any`, ProFTPD `<Anonymous>`. **Log in to webmail once afterwards.** | App Security Settings |
 | 5 | sysctl | ASLR 2, SYN cookies, no redirects/source routing, rp_filter, martians, ip_forward 0 | Uncategorized OS Settings |
 | 6 | perms | shadow/gshadow 640, passwd/group 644, sudoers 440, sshd_config 600; world-writable files under /etc and world-writable dirs without the sticky bit (/etc, /var/mail, /var/www…) fixed; lists odd SUID files | OS Permissions |
 | 7 | services | stops risky services (ftp, web, samba, telnet, cups, avahi, snmp…) unless critical; starts critical ones; masks Ctrl-Alt-Del reboot | Service Auditing |
+| 7b | logging | installs + starts **auditd** with watch rules (passwd/shadow/sudoers/sshd/PAM/cron/logins, sudo/su/useradd); rsyslog running; world-writable logs fixed; **AppArmor** installed + enabled (complain-mode profiles reported); **core dumps off** (`* hard core 0`, systemd-coredump Storage=none) | Local Policy / Uncategorized OS Settings |
+| 7c | desktop | **automatic + guest login off** (gdm3, lightdm, sddm); gdm no X over TCP / XDMCP; **screen lock after 5 min** + **no USB/CD automount/autorun** for every user (dconf, locked); **Firefox protections back on** in every profile (pop-up blocker, add-on install warning, signed add-ons, malware/phishing/download blocking). Close Firefox first; it skips a profile while Firefox is open | Account Policies / App Security Settings |
 | 8 | software | purges hacking tools/games (john, hydra, nmap, wireshark, ophcrack, aircrack, netcat-traditional, games, torrents) unless allowed | Unwanted Software |
 | 9 | updates | auto-updates on, full upgrade (slow, it asks first) | OS Updates |
-| 10 | persistence / media | **report only** → `findings.txt` | Malware / Prohibited Files |
+| 10 | persistence / media | **report only** → `findings.txt` (cron, units, rc.local, shell start-up hooks incl. fake aliases / `PROMPT_COMMAND` / `LD_PRELOAD`, init.d + autostart + per-user units not from a package, PAM modules not from a package, **web shells** in /var/www, **netcat/python/bash listening on a port**) | Malware / Prohibited Files |
 
 </details>
 
@@ -82,6 +84,12 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - [ ] **Autologin** (gdm3 `AutomaticLoginEnable=true` in `/etc/gdm3/custom.conf`, or lightdm `autologin-user=`): turn it off unless the README needs it.
 - [ ] **Recently installed / non-packaged files** in `/opt`, `/usr/local/bin` → check each one against the README.
 - [ ] **Dual-use packages** (netcat-openbsd, tcpdump, socat) → remove if the README doesn't need them.
+- [ ] **POSSIBLE BACKDOOR: 'nc'/'python3'/'bash' listens on ...**: forensics may ask the port. Find what starts it (cron, unit, rc.local), remove that, then `sudo kill PID`. Malware.
+- [ ] **possible WEB SHELL**: a PHP file that runs `$_GET`/`$_POST` or decodes base64 → read it, answer forensics, delete it (keep the README site's real files). Malware.
+- [ ] **PAM module not from any package** → `grep -r <name> /etc/pam.d`, remove that line, delete the `.so`. It can log every password. Malware.
+- [ ] **boot script / autostart entry / per-user systemd service not from a package** → read it; disable (`sudo systemctl disable --now X`, `systemctl --user` for user units) and delete if it's a backdoor.
+- [ ] **shell startup file** (fake `alias sudo=...`, `PROMPT_COMMAND`, `LD_PRELOAD`) → comment the line out in that file. Malware.
+- [ ] **AppArmor profile in COMPLAIN mode** → `sudo aa-enforce <profile>`; test the critical service afterwards.
 
 </details>
 
@@ -100,16 +108,18 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - **samba**: `guest ok = no`, `map to guest = never`, `smb encrypt = required`, `min protocol = SMB2`.
 - **mysql/mariadb**: `bind-address = 127.0.0.1`, `local-infile = 0`; `sudo mysql_secure_installation` (root password, no anonymous users, no remote root, drop test DB).
 - **php** (`/etc/php/*/apache2/php.ini`): `expose_php = Off`, `allow_url_include = Off`, `allow_url_fopen = Off`. Add `disable_functions = exec,shell_exec,passthru,system,popen,proc_open` only if the README's web app doesn't need them (test the site after).
+- **bind9** (`/etc/bind/named.conf.options`, kit does version + allow-transfer): `allow-recursion` only for local nets, no `allow-update { any; }`; check with `sudo named-checkconf` before restarting `named`.
+- **postfix**: `mynetworks = 127.0.0.0/8 [::1]/128` (never `0.0.0.0/0` = open relay), `smtpd_relay_restrictions` keeps `reject_unauth_destination`; `sudo postfix check`.
+- **proftpd** (`/etc/proftpd/proftpd.conf`): comment out the `<Anonymous>` block unless public FTP is required; `sudo proftpd -t` before restart.
 - **the README's own app** (game server, web panel…): do exactly what the README says.
 
 </details>
 
-- [ ] **Firefox:** update, block pop-ups, turn on phishing/malware protection, don't save passwords (Settings > Privacy & Security). App Security Settings.
+- [ ] **Firefox:** the `desktop` module fixes settings files; by hand: update it, HTTPS-Only Mode, don't save passwords, remove unknown extensions (Settings > Privacy & Security). App Security Settings.
 - [ ] **Mint Update Manager:** Edit > Preferences > Automation → turn on automatic updates; Edit > Software Sources → official mirrors. OS Updates (GUI-scored).
-- [ ] **Screen lock** (Mint: System Settings > Screensaver → lock after ≤ 15 min, require password).
+- [ ] **Screen lock:** the `desktop` module sets it for GNOME/Cinnamon/MATE. Xfce, or if the score doesn't move: System Settings > Screensaver → lock after ≤ 15 min, require password.
 - [ ] **Passwords** for README users that look weak: `sudo passwd user`.
-- [ ] **auditd** (Debian rounds): `sudo apt install auditd && sudo systemctl enable --now auditd`.
-- [ ] **AppArmor** enabled: `sudo aa-status`.
+- [ ] **auditd / AppArmor:** done by the `logging` module. Check: `systemctl is-active auditd`, `sudo aa-status`.
 
 </details>
 
@@ -124,6 +134,10 @@ Round 1 = Mint 21. Round 2 = Debian 12. The kit works on both.
 - Firewall rules that block the critical service's port.
 - Setting a password max age by hand on an old image without `chage -d today`: every password expires at once and services that log in through PAM (Dovecot/webmail, FTP, Samba) reject users. The kit handles it.
 - Changing the auto-login user's password (README usually says you don't have to; it can lock you out).
+- `apt purge` / `apt autoremove` that also removes the desktop or a critical package: **read the package list** before answering Y.
+- Deleting files in `/usr`, `/lib`, `/etc` because they "look odd": check `dpkg -S FILE` first.
+- Two teammates working on the same image, or rebooting in the middle of updates.
+- **Score went down?** Stop. Undo the LAST change (backup below), refresh the report twice; still down → revert to the last snapshot. Earned points stay earned.
 - Undo: revert the snapshot, or copy back from `/root/cpkit-runs/<time>/backup/`.
 
 </details>

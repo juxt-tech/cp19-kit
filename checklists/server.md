@@ -1,6 +1,6 @@
 # Windows Server 2019/2022 Checklist (CyberPatriot 19)
 
-> **Windows status:** the Windows/Server script passes 192 unit tests and has run end to end on the District 13 practice image (every module applied), but **never on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
+> **Windows status:** the Windows/Server script passes its 300+ unit tests and has run end to end on the District 13 practice image (every module applied), but **never on a real CyberPatriot image**. Run AUDIT first, apply **one module at a time** with a snapshot before each, and refresh the score report after every module. If a module errors or the score drops, revert the snapshot and do that section by hand from the checklist.
 
 **Do everything in [`windows.md`](windows.md) first.** It's the same kit; the menu adds a **Server** module automatically. This file covers the extras. **Click a section to open it.**
 
@@ -34,6 +34,7 @@
 | Lists Enterprise/Schema Admins, Backup/Account/Server Operators, DnsAdmins | privilege review |
 | DNS: no zone transfers to any server; secure dynamic updates only | App Security Settings |
 | IIS: lists sites; directory browsing off; flags FTP anonymous auth | App Security Settings |
+| DC (SecurityOptions module): **Zerologon** enforcement `FullSecureChannelProtection=1`; reports a `VulnerableChannelAllowList` | Local Policies / Defensive Countermeasures |
 
 </details>
 

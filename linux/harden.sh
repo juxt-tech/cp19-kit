@@ -14,7 +14,7 @@ CP_KIT_ROOT="$(dirname "$KIT")"   # media report skips the kit's own download
 source "$KIT/lib/common.sh"
 for m in "$KIT"/modules/*.sh; do source "$m"; done
 
-ORDER=(users sources integrity passwords firewall ssh apps sysctl perms services software updates persistence media)
+ORDER=(users sources integrity passwords firewall ssh apps sysctl perms services logging desktop software updates persistence media)
 declare -A WHAT=(
     [users]="accounts + sudo match the README; lock root; guest login off"
     [sources]="re-enable official apt sources, drop Kali/Parrot repos + apt-get update"
@@ -26,6 +26,8 @@ declare -A WHAT=(
     [sysctl]="kernel/network hardening (ASLR, SYN cookies, no redirects)"
     [perms]="fix /etc/shadow, passwd, sudoers perms; list odd SUID files"
     [services]="stop risky services not required by the README"
+    [logging]="auditd + rules, rsyslog, log perms, AppArmor, core dumps off"
+    [desktop]="autologin off, screen lock, no USB autorun, Firefox protections back on"
     [software]="purge hacking tools/games; list recent installs"
     [updates]="enable sources + auto-updates; full upgrade"
     [persistence]="REPORT cron/timers/rc.local/backdoors/hosts; asks to quarantine reverse-shell cron jobs"

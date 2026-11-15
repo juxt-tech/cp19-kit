@@ -37,7 +37,7 @@ yes_ "FollowSymLinks kept"              grep -qE '^[[:space:]]*Options FollowSym
 echo "== r3: apps - php.ini"
 i="$T/php.ini"
 printf 'expose_php = On\nsession.cookie_httponly =\nallow_url_include = Off\n' > "$i"
-eq "php keys to change" "$(apps_php_plan "$i" | xargs)" "expose_php=Off session.cookie_httponly=1"
+eq "php keys to change" "$(apps_php_plan "$i" | xargs)" "expose_php=Off session.cookie_httponly=1 display_errors=Off"
 
 echo "== r3: apps - roundcube installer + dovecot ssl"
 r="$T/config.inc.php"

@@ -5,7 +5,9 @@
 
 CP_BAD_SERVICES="apache2 nginx lighttpd vsftpd proftpd pure-ftpd smbd nmbd samba telnet inetd xinetd openbsd-inetd \
 rsh-server rlogin rexec nfs-server nfs-kernel-server rpcbind snmpd cups cups-browsed avahi-daemon isc-dhcp-server \
-bind9 named postfix exim4 dovecot squid mysql mariadb postgresql tftpd-hpa atftpd xrdp vncserver x11vnc minetest-server"
+bind9 named postfix exim4 dovecot squid mysql mariadb postgresql tftpd-hpa atftpd xrdp vncserver x11vnc minetest-server \
+redis-server redis memcached mongod mongodb telnetd inetutils-inetd rsync nis ypbind ypserv slapd snmptrapd dnsmasq \
+transmission-daemon minidlna inspircd ircd-hybrid znc"
 
 # Pure. Arg: unit names (.service/.socket/.path, active or enabled). One DISABLE/KEEP line per service.
 plan_services() {

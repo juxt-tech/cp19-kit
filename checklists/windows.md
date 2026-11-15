@@ -48,7 +48,7 @@ Answer **before** deleting anything: the evidence might be the file you'd delete
 </details>
 
 <details>
-<summary><b>3. Apply, one module at a time</b>: what each of the 12 modules does</summary>
+<summary><b>3. Apply, one module at a time</b>: what each of the 13 modules does</summary>
 
 Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, refresh the score report: **a score drop = undo** (revert the snapshot, or use the files in `C:\cpkit-runs\<time>\backup`).
 
@@ -57,7 +57,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 | 1 | Users | delete non-README users; create missing ones; enable disabled authorized ones; fix Administrators; disable Guest + built-in Administrator; "password never expires" off; lists other privileged groups and extra Guests members | User Auditing |
 | 2 | AccountPolicy | length 10, complexity on, history 5, max age 90, min age 10, reversible off, lockout 5 / 30 min / reset 30 | Account Policies |
 | 3 | AuditPolicy | every category Success + Failure | Local Policies |
-| 4 | SecurityOptions | UAC on + secure desktop, no anonymous SAM/share enumeration, NTLMv2 only, no LM hash, SMB signing, CTRL+ALT+DEL, don't show last user, lock after 15 min idle, no shutdown from the logon screen; insecure guest logons off, SmartScreen = Warn, AutoPlay off, WDigest off, DEP for all programs (skipped if BitLocker is on); **reports** risky User Rights Assignment entries (incl. a plain user with *Log on as a service*) | Local Policies |
+| 4 | SecurityOptions | UAC on + secure desktop, no anonymous SAM/share enumeration, NTLMv2 only, no LM hash, SMB signing, CTRL+ALT+DEL, don't show last user, lock after 15 min idle, no shutdown from the logon screen; insecure guest logons off, SmartScreen = Warn, AutoPlay off, WDigest off, DEP for all programs (skipped if BitLocker is on); Sharing model = Classic; **LSA protection** (RunAsPPL); **PrintNightmare** Point-and-Print fixes; SEHOP + safe DLL search; source routing / ICMP redirects off; WPAD off; PowerShell module logging + command line in process events; Remote Assistance full control off; execution policy Unrestricted/Bypass → RemoteSigned; DC: **Zerologon** enforcement (+ reports a VulnerableChannelAllowList); **reports** risky User Rights Assignment entries (incl. a plain user with *Log on as a service*) | Local Policies |
 | 5 | Firewall | all 3 profiles on, block inbound, allow outbound, notify, no unicast response | Defensive Countermeasures |
 | 6 | Defender | real-time, PUA, cloud on; **removes exclusions** (CP19 had a `.exe` exclusion); threat default actions "Allow / No action" → Quarantine; updates signatures; quick scan | Defensive Countermeasures |
 | 7 | Services | disables RemoteRegistry, Telnet, SNMP, Simple TCP/IP (`simptcp`), FTP/IIS (unless critical), UPnP, Xbox, etc.; Windows Update automatic; DHCP Client, Event Log, Server, Firewall, BFE **automatic and running**. `KEEP_RDP=no`: the RDP services are set Disabled and stop at the next reboot (RDP itself is blocked at once by the Remote module) | Service Auditing |
@@ -65,6 +65,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 | 9 | Shares | removes non-default shares (lists access first; never admin or role shares); SMBv1 off; SMB signing; SMB minimum 3.1.1 (Win11 24H2 / Server 2025 only) | Uncategorized OS Settings |
 | 10 | Features | Telnet client, TFTP, SMB1, PowerShell v2 off | Uncategorized OS Settings |
 | 11 | Updates | auto-update policy; reminds you (findings) to run Windows Update; lists apps to update | OS + App Updates |
+| 11b | Browsers | **Edge** SmartScreen + PUA blocking, pop-ups blocked, dangerous downloads blocked, no saved passwords; same for **Chrome** and **Firefox** (pop-up blocker locked, sites can't install add-ons) when installed; **reports** Firefox profiles whose prefs.js switches protections off | App Security Settings |
 | 12 | Software / Persistence / Media | **reports only** → `findings.txt` | Unwanted Software / Malware / Prohibited Files |
 
 </details>
@@ -77,6 +78,8 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 - [ ] **Media + prohibited files:** delete media in user folders and odd `C:\` folders, plus files like `passwords.txt`. Lines marked `HIDDEN` were hidden with `attrib +h`; lines saying `plaintext credit card` / `SSN` are PII files (practice keys score these as "unencrypted records"). **Only after forensics.** Prohibited Files.
 - [ ] **Hosts file** (`C:\Windows\System32\drivers\etc\hosts`): remove non-README entries. Malware/redirects.
 - [ ] **IFEO debugger / sticky keys** (`sethc.exe` replaced): restore it. For an IFEO hijack, delete **both** the registry value and the file it points to (District 13: `powershell.exe` → `powrshell.exe`). Malware.
+- [ ] **UNQUOTED service path**: `regedit` > `HKLM\SYSTEM\CurrentControlSet\Services\<name>` > ImagePath → put quotes around the `.exe` path (keep the arguments outside the quotes). Also delete any `C:\Program.exe` it names.
+- [ ] **NetSh helper DLL / BootExecute / PowerShell profile** lines: delete the registry value or the profile file after reading it (forensics may ask what it ran).
 - [ ] **Other persistence lines:** `SilentProcessExit`, `AppInit_DLLs`, `WMI event consumer`, `suspicious Microsoft-folder task`, `driver ... loads from`. Remove what isn't from Windows or a README program. WMI: `Get-CimInstance -Namespace root\subscription -ClassName __EventConsumer` / `__EventFilter` / `__FilterToConsumerBinding`, then `| Remove-CimInstance` on the bad ones. Malware.
 - [ ] **User rights** (`userrights` lines): `secpol.msc` > Local Policies > User Rights Assignment, remove the named account/group from that right. Typical plants: a user in *Debug programs*, *Everyone* in *Take ownership*, Guest allowed to log on.
 
@@ -100,7 +103,7 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 <details>
 <summary><b>5. Manual-only items</b>: browsers, Windows Update, passwords, lock screen</summary>
 
-- [ ] **Browsers** (Firefox/Chrome/Edge): update; turn on pop-up blocker, safe browsing / phishing protection ("Block dangerous and deceptive content"), HTTPS-Only Mode, automatic updates, and "Do Not Track"; turn off saving passwords and Firefox Accounts; remove suspicious extensions and homepage hijacks. App Security Settings.
+- [ ] **Browsers** (Firefox/Chrome/Edge): the Browsers module sets the policies; still by hand: update; turn on pop-up blocker, safe browsing / phishing protection ("Block dangerous and deceptive content"), HTTPS-Only Mode, automatic updates, and "Do Not Track"; turn off saving passwords and Firefox Accounts; remove suspicious extensions and homepage hijacks. App Security Settings.
 - [ ] **Folder permissions** the README mentions (e.g. "X must not write to the Memes folder"): folder > Properties > Security > Advanced, remove the user's Write/Modify. Check `icacls folder` afterwards.
 - [ ] **Remote Desktop Users / Remote Management Users:** the Users module lists their members in findings. Remove anyone the README doesn't name (`Remove-LocalGroupMember -Group 'Remote Desktop Users' -Member name`).
 - [ ] **Attack Surface Reduction** (if Office is installed): practice keys scored "Block Win32 API calls from Office macros": `Add-MpPreference -AttackSurfaceReductionRules_Ids 92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b -AttackSurfaceReductionRules_Actions Enabled`.
@@ -125,6 +128,8 @@ Run `harden.ps1 -Apply` and pick from the menu in this order. After each one, re
 - Uninstalling a tool the README uses (District 13 penalized removing Wireshark and Notepad++). Put README tools in `ALLOWED_SOFTWARE` so the kit doesn't flag them.
 - Deleting or disabling a **service account** a README site or database uses (e.g. an IIS app-pool / SQL login account), or stopping its IIS site / app pool.
 - Touching anything named CyberPatriot / scoring.
+- Turning on **BitLocker**, or resetting permissions on `C:\Windows` recursively.
+- Two teammates on the same image; rebooting in the middle of updates (reboot once, near the end).
 - If the score drops: **revert to your last snapshot**, re-do the steps since then, and skip the one that hurt.
 
 </details>
