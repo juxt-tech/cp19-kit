@@ -254,3 +254,52 @@ def run_checks(dev, switchport=None):
     for c in CHECKS:
         findings.extend(c(dev, switchport))
     return findings
+
+
+FOOTER = "Rules only. The Assessment Items list is the real grade."
+USAGE = "usage: python lint_showrun.py <folder with <device>.txt and optional <device>.switchport.txt>"
+
+
+def _say(text=""):
+    print(text.encode("ascii", "replace").decode("ascii"))
+
+
+def _read(path):
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def main(argv):
+    from pathlib import Path
+    if len(argv) != 1 or not Path(argv[0]).is_dir():
+        _say(USAGE)
+        return 2
+    folder = Path(argv[0])
+    configs = sorted(p for p in folder.glob("*.txt") if not p.name.endswith(".switchport.txt"))
+    if not configs:
+        _say(f"no show-run files (*.txt) found in {folder}")
+        _say(USAGE)
+        return 2
+    stems = {p.stem for p in configs}
+    any_fail = False
+    for p in configs:
+        sp_path = folder / f"{p.stem}.switchport.txt"
+        switchport = parse_switchport(_read(sp_path)) if sp_path.exists() else None
+        dev = parse_config(_read(p), p.stem)
+        findings = run_checks(dev, switchport)
+        fails = sum(f.level == "FAIL" for f in findings)
+        any_fail = any_fail or fails > 0
+        _say(f"== {dev.name} ({'switch' if dev.is_switch else 'router'}) ==")
+        for f in sorted(findings, key=lambda f: f.level != "FAIL"):
+            _say(f"{f.level:<5} {f.message}")
+        _say(f"-- {fails} FAIL, {len(findings) - fails} WARN")
+        _say()
+    for sp in sorted(folder.glob("*.switchport.txt")):
+        if sp.name[: -len(".switchport.txt")] not in stems:
+            _say(f"WARN  {sp.name}: no matching show run file")
+    _say(FOOTER)
+    return 1 if any_fail else 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))

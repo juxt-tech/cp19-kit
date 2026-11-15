@@ -230,5 +230,47 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(by_level(found, "FAIL"), [])
 
 
+def run_main(args):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = L.main(args)
+    return code, buf.getvalue()
+
+
+class MainTests(unittest.TestCase):
+    def test_main_exit_codes(self):
+        self.assertEqual(run_main([str(FIXTURES / "clean")])[0], 0)
+        self.assertEqual(run_main([str(FIXTURES / "r2")])[0], 1)
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(run_main([d])[0], 2)
+        self.assertEqual(run_main([str(FIXTURES / "does-not-exist")])[0], 2)
+        self.assertEqual(run_main([])[0], 2)
+
+    def test_main_footer_printed(self):
+        out = run_main([str(FIXTURES / "r2")])[1]
+        self.assertIn("== Campus_Access1 (switch) ==", out)
+        self.assertIn("-- 1 FAIL, 0 WARN", out)
+        self.assertTrue(out.rstrip().endswith("Rules only. The Assessment Items list is the real grade."))
+
+    def test_main_uses_switchport_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "SW.txt").write_text(SECRET + "interface FastEthernet0/1\n!\n")
+            Path(d, "SW.switchport.txt").write_text("Name: Fa0/1\nNegotiation of Trunking: Off\n")
+            code, out = run_main([d])
+        self.assertEqual(code, 0, out)
+
+    def test_main_orphan_switchport_warns(self):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "SW1.txt").write_text((FIXTURES / "clean" / "SW1.txt").read_text())
+            Path(d, "Ghost.switchport.txt").write_text("Name: Fa0/1\nNegotiation of Trunking: On\n")
+            code, out = run_main([d])
+        self.assertEqual(code, 0)
+        self.assertIn("Ghost.switchport.txt: no matching show run file", out)
+
+    def test_main_output_is_ascii(self):
+        out = run_main([str(FIXTURES / "r2")])[1]
+        out.encode("ascii")
+
+
 if __name__ == "__main__":
     unittest.main()
