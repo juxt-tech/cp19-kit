@@ -205,7 +205,7 @@ Update this table after each practice lab.
 
 | Gotcha | Status | Fix |
 |---|---|---|
-| DTP left on for unused ports ("all layer 2 ports") | suspected (R2) | `interface range fa0/5 - 24 , g0/1 - 2` -> `switchport mode access` + `switchport nonegotiate` |
+| DTP left on for unused ports ("all layer 2 ports") | likely (R2): PT grades `Nonegotiate` per port, see [what PT can grade](../cisco/research/pt-assessment-items.md) | `interface range fa0/5 - 24 , g0/1 - 2` -> `switchport mode access` + `switchport nonegotiate` |
 | Router switch-module ports (ISR NIM) forgotten | suspected (R2) | `show interfaces switchport` on the router; configure every listed port except the ones the spec says not to touch |
 | Pasted lines silently dropped or rejected | suspected (R2) | scroll back for `%`; checker; `show run` |
 | `exit` after a rejected line breaks the rest of the block | suspected (R2) | rule 7 |
