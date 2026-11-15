@@ -102,6 +102,7 @@ Private ranges: `10.0.0.0/8`, `172.16.0.0/12` (172.16–172.31), `192.168.0.0/16
 <summary><b>F. Quiz (NetAcad) study map</b> + 30 practice questions</summary>
 
 CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions come from the newest ones.
+**Which .pka labs to practice, per round: [cisco/research/netacad-course-map.md](../cisco/research/netacad-course-map.md)** (start with 13.5.5 Configure DTP).
 
 | Round | Topics |
 |---|---|
