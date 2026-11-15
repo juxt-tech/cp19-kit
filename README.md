@@ -11,7 +11,7 @@ Audit-first, README-driven hardening scripts and checklists for CyberPatriot 19.
 | Windows 10 / 11 | `windows/harden.ps1` | [checklists/windows.md](checklists/windows.md) |
 | Windows Server 2019 / 2022 | `windows/harden.ps1` (adds a Server module automatically) | [checklists/server.md](checklists/server.md) |
 | Linux Mint 21 / Debian 12 / Ubuntu 22-24 | `linux/harden.sh` | [checklists/linux.md](checklists/linux.md) |
-| Cisco Packet Tracer + NetAcad quiz | (no script, it runs in a locked VM) | [checklists/cisco.md](checklists/cisco.md) + `cisco/templates/` |
+| Cisco Packet Tracer + NetAcad quiz | (no script, it runs in a locked VM; practice checker: [cisco/lint](cisco/lint/README.md)) | [checklists/cisco.md](checklists/cisco.md) (section G = spec-reading rules) + `cisco/templates/` + [R2 answer key](cisco/labs/r2-practice/answer-key.md) |
 
 ## The rules (read before your first round)
 1. **Forensics questions first.** The scripts never delete files, but you might, and the evidence could be the file.

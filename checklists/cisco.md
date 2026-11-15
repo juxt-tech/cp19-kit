@@ -1,6 +1,7 @@
 # Cisco Networking Challenge Playbook (CyberPatriot 19)
 
 No AI during scored rounds. This is your solo playbook. Templates to copy are in `cisco/templates/`.
+**Read section G (spec-reading rules) before every lab.** Practice-time checker: `cisco/lint/`.
 Two parts: **(A) Packet Tracer** inside the CP testing VM and **(B) the NetAcad quiz**. **Click a section to open it.**
 
 <details>
@@ -177,5 +178,44 @@ CP19 gives the "CyberPatriot Content" course. Each round adds modules; questions
 </details>
 
 Study sources: the NetAcad course, Jeremy's IT Lab videos (the club's module map follows them), the club's Packet Tracer practice files (`2.5.5 Configure Initial Switch Settings`, `CCNA2 practice final`, "Baby Steps PKA").
+
+</details>
+
+<details>
+<summary><b>G. Spec-reading rules + gotchas</b> (why "it all works" can still score 11/20)</summary>
+
+The R2 practice lab passed every ping, DHCP, browsing and ACL test and still scored **11.12/20**.
+The grader compares your config to an answer file line by line. Pings only prove the network works.
+
+### Rules
+1. **"All" means every one.** "All layer 2 switch ports" includes the ~20 unused ports on every switch and the router's switch-module ports. Use `interface range`.
+2. **Type exactly what the spec says, nothing extra.** Copy names character for character, typos included (`Block_Communicaton`). Extra "best practice" lines can be marked wrong.
+3. **Done = Assessment Items all green**, not "pings work". Practice: Check Results -> Assessment Items, read every red X. Scored round: re-read every spec line against `show run`.
+4. **Find the facts before typing.** `show cdp neighbors` (which ports link where), `show ip route static` (what's pre-configured), `show interfaces switchport` (which ports are layer 2). Never guess port numbers.
+5. **Check the prompt before typing.** `>` = user mode, so config commands fail. `enable` -> `#`, then `conf t` -> `(config)#`.
+6. **After every paste, scroll up and look for `%`** (`% Invalid input`, `% Incomplete`). Packet Tracer can drop characters on fast pastes.
+7. **No `exit` straight after a line that might error.** If `vlan 199` is rejected, the `exit` after it leaves config mode and every line after fails silently. Use `vlan 100,200,300,400` on switches.
+8. **One spec line = one check.** Tick each line off on paper as you do it. Each spec bullet is usually its own Assessment Item.
+9. **Ambiguous line? Pick the reading that matches the addressing table, and write down why.** (R2: "router .2" vs `50.100.0.129/25` -> .129.)
+10. **Practice: run the checker** on your pasted configs: `python cisco/lint/lint_showrun.py <folder>` ([cisco/lint/README.md](../cisco/lint/README.md)).
+
+### Gotchas
+Status: **confirmed** = seen as a red X in Assessment Items; **suspected** = likely, not yet seen.
+Update this table after each practice lab.
+
+| Gotcha | Status | Fix |
+|---|---|---|
+| DTP left on for unused ports ("all layer 2 ports") | suspected (R2) | `interface range fa0/5 - 24 , g0/1 - 2` -> `switchport mode access` + `switchport nonegotiate` |
+| Router switch-module ports (ISR NIM) forgotten | suspected (R2) | `show interfaces switchport` on the router; configure every listed port except the ones the spec says not to touch |
+| Pasted lines silently dropped or rejected | suspected (R2) | scroll back for `%`; checker; `show run` |
+| `exit` after a rejected line breaks the rest of the block | suspected (R2) | rule 7 |
+| Extra lines not in the spec (`.1` DHCP exclusions, PortFast on the remote site) | suspected (R2) | rule 2 |
+| Trunk port guessed (Gi0/1-2) instead of read (Fa0/1-2) | caught in R2 by CDP | rule 4 |
+| Config typed at `Router>` | caught in R2 | rule 5 |
+| `switchport trunk allowed vlan` typed as separate lines (each one replaces the last) | known | one comma list, or `allowed vlan add` |
+| AD 255 floating route never installs | known (quiz trivia) | type it if the spec says so |
+| Spanning-tree priority shows 4196, not 4096 | known (not a bug) | display = priority + VLAN number |
+
+Worked example: [cisco/labs/r2-practice/answer-key.md](../cisco/labs/r2-practice/answer-key.md).
 
 </details>
